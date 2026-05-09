@@ -2,6 +2,7 @@ using System.Net;
 using System.Text.Json;
 using CryptoSignalBot.Domain.Configuration;
 using CryptoSignalBot.Domain.Enums;
+using CryptoSignalBot.Domain.PaperTrading;
 using CryptoSignalBot.Domain.Reports;
 using CryptoSignalBot.Domain.Signals;
 using CryptoSignalBot.Infrastructure.Notifications;
@@ -138,6 +139,64 @@ public sealed class WatchlistReportFormattingTests
             report.NotifiableSignals,
             signal => Assert.Equal("BTCUSDT", signal.Symbol),
             signal => Assert.Equal("SOLUSDT", signal.Symbol));
+    }
+
+    [Fact]
+    public async Task TelegramPaperTradeReport_SendsCompactSummary()
+    {
+        var handler = new CapturingHandler();
+        var notifier = new TelegramNotifier(
+            new HttpClient(handler),
+            Options.Create(new TelegramSettings
+            {
+                BotToken = "test-token",
+                ChatId = "test-chat"
+            }));
+
+        var report = new PaperTradeReport(
+            new DateTimeOffset(2026, 5, 9, 14, 30, 0, TimeSpan.Zero),
+            new[]
+            {
+                new PaperTradeResult(
+                    1,
+                    "BTCUSDT",
+                    "1h",
+                    new DateTime(2026, 5, 9, 10, 0, 0),
+                    80_000m,
+                    79_000m,
+                    82_000m,
+                    8m,
+                    "BuyWatch",
+                    PaperTradeOutcome.TakeProfit1,
+                    new DateTime(2026, 5, 9, 12, 0, 0),
+                    82_000m,
+                    2.5m),
+                new PaperTradeResult(
+                    2,
+                    "ETHUSDT",
+                    "4h",
+                    new DateTime(2026, 5, 9, 11, 0, 0),
+                    2_300m,
+                    2_250m,
+                    2_400m,
+                    7.5m,
+                    "BuyWatch",
+                    PaperTradeOutcome.Open,
+                    null,
+                    null,
+                    null)
+            });
+
+        await notifier.SendPaperTradeReportAsync(report);
+
+        var text = handler.ReadJsonPayload().GetProperty("text").GetString();
+
+        Assert.NotNull(text);
+        Assert.Contains("*CryptoSignalBot Paper Trading*", text);
+        Assert.Contains("Signals: 2 | Closed: 1 | Open: 1", text);
+        Assert.Contains("Wins: 1 | Losses: 0 | Win rate: 100%", text);
+        Assert.Contains("BTCUSDT 1h WIN +2.5% score 8", text);
+        Assert.DoesNotContain("ETHUSDT", text);
     }
 
     private static Signal CreateSignal(string symbol, string timeframe, decimal price, decimal score)
