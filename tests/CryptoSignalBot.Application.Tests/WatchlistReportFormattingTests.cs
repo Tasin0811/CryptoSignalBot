@@ -48,8 +48,8 @@ public sealed class WatchlistReportFormattingTests
         Assert.Contains("2026-05-09 14:30 UTC", text);
         Assert.Contains("Top setups: 8", text);
         Assert.Contains("Suppressed duplicates: 3", text);
-        Assert.Contains("ALT01USDT 1h - Da osservare per possibile acquisto 9,9/10", text);
-        Assert.Contains("ALT08USDT 1h - Da osservare per possibile acquisto 9,2/10", text);
+        Assert.Contains("ALT01USDT 1h - Da osservare per possibile acquisto 9.9/10", text);
+        Assert.Contains("ALT08USDT 1h - Da osservare per possibile acquisto 9.2/10", text);
         Assert.Contains("Setup interessante: osservare", text);
         Assert.DoesNotContain("ALT09USDT", text);
         Assert.DoesNotContain("BELOWUSDT", text);

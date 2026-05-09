@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Globalization;
 using CryptoSignalBot.Domain.Configuration;
 using CryptoSignalBot.Domain.PaperTrading;
 using CryptoSignalBot.Domain.Reports;
@@ -78,6 +79,6 @@ public sealed class TelegramNotifier(HttpClient httpClient, IOptions<TelegramSet
         return $"*CryptoSignalBot Report*\n{report.CreatedAt:yyyy-MM-dd HH:mm} UTC\n" +
                $"Top setups: {topSignals.Length}\nSuppressed duplicates: {report.SuppressedDuplicates}\n\n" +
                string.Join("\n", topSignals.Select(signal =>
-                   $"{signal.Symbol} {signal.Timeframe} - {SignalMessageFormatter.FormatSignalType(signal.SignalType)} {signal.Score:0.##}/10\n{SignalMessageFormatter.FormatReportActionLine(signal)}"));
+                   $"{signal.Symbol} {signal.Timeframe} - {SignalMessageFormatter.FormatSignalType(signal.SignalType)} {signal.Score.ToString("0.##", CultureInfo.InvariantCulture)}/10\n{SignalMessageFormatter.FormatReportActionLine(signal)}"));
     }
 }
