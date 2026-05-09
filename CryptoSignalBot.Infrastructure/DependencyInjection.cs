@@ -30,9 +30,18 @@ public static class DependencyInjection
             configuration.GetConnectionString("CryptoSignalBot") ??
             configuration.GetConnectionString("DefaultConnection") ??
             DefaultConnectionString;
+        var databaseProvider = configuration["Database:Provider"];
 
         services.AddDbContext<CryptoSignalBotDbContext>(options =>
-            options.UseSqlServer(connectionString));
+        {
+            if (IsSqlite(databaseProvider, connectionString))
+            {
+                options.UseSqlite(connectionString);
+                return;
+            }
+
+            options.UseSqlServer(connectionString);
+        });
 
         services.AddScoped<IPersistenceService, EfPersistenceService>();
         services.AddHttpClient<IMarketDataService, BinanceRestClient>();
@@ -47,5 +56,12 @@ public static class DependencyInjection
         services.AddScoped<INotificationService, CompositeNotificationService>();
 
         return services;
+    }
+
+    private static bool IsSqlite(string? provider, string connectionString)
+    {
+        return string.Equals(provider, "Sqlite", StringComparison.OrdinalIgnoreCase) ||
+               connectionString.StartsWith("Data Source=", StringComparison.OrdinalIgnoreCase) ||
+               connectionString.EndsWith(".db", StringComparison.OrdinalIgnoreCase);
     }
 }

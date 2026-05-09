@@ -8,6 +8,8 @@ artifacts/
 *.user
 *.suo
 *.db
+*.db-shm
+*.db-wal
 *.log
 logs/
 TestResults/

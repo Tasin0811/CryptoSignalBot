@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: cryptosignalbot
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
+      - key: Bot__DryRunOnly
+        value: true
+      - key: DATABASE_CONNECTION_STRING
+        value: Data Source=/tmp/cryptosignalbot.db
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+      - key: SMTP_TO
+        sync: false
+      - key: COINGECKO_API_KEY
+        sync: false

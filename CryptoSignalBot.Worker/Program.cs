@@ -1,10 +1,12 @@
 using CryptoSignalBot.Application;
 using CryptoSignalBot.Domain.Configuration;
 using CryptoSignalBot.Infrastructure;
+using CryptoSignalBot.Infrastructure.Configuration;
 using CryptoSignalBot.Worker;
 using Serilog;
 
 var builder = Host.CreateApplicationBuilder(args);
+builder.Configuration.AddCryptoSignalBotEnvironmentVariables();
 
 var logRoot = Environment.GetEnvironmentVariable("CRYPTO_SIGNAL_BOT_LOG_DIR");
 if (string.IsNullOrWhiteSpace(logRoot))

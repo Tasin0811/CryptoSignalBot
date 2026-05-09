@@ -30,6 +30,12 @@ internal sealed class DashboardCommand(string name, string projectRoot, string[]
     public async Task<CommandResult> RunAsync(CancellationToken cancellationToken)
     {
         var workerProject = Path.Combine(projectRoot, "CryptoSignalBot.Worker", "CryptoSignalBot.Worker.csproj");
+        var workerDll = Environment.GetEnvironmentVariable("CRYPTO_SIGNAL_BOT_WORKER_DLL");
+        if (string.IsNullOrWhiteSpace(workerDll))
+        {
+            workerDll = Path.Combine(projectRoot, "worker", "CryptoSignalBot.Worker.dll");
+        }
+
         var startInfo = new ProcessStartInfo
         {
             FileName = "dotnet",
@@ -39,10 +45,18 @@ internal sealed class DashboardCommand(string name, string projectRoot, string[]
             UseShellExecute = false
         };
 
-        startInfo.ArgumentList.Add("run");
-        startInfo.ArgumentList.Add("--project");
-        startInfo.ArgumentList.Add(workerProject);
-        startInfo.ArgumentList.Add("--");
+        if (File.Exists(workerDll))
+        {
+            startInfo.ArgumentList.Add(workerDll);
+        }
+        else
+        {
+            startInfo.ArgumentList.Add("run");
+            startInfo.ArgumentList.Add("--project");
+            startInfo.ArgumentList.Add(workerProject);
+            startInfo.ArgumentList.Add("--");
+        }
+
         foreach (var arg in workerArgs)
         {
             startInfo.ArgumentList.Add(arg);

@@ -6,18 +6,22 @@ using CryptoSignalBot.Dashboard;
 using CryptoSignalBot.Domain.Configuration;
 using CryptoSignalBot.Domain.PaperTrading;
 using CryptoSignalBot.Infrastructure;
+using CryptoSignalBot.Infrastructure.Configuration;
 using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 var startedAt = DateTimeOffset.UtcNow;
-var projectRoot = Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, ".."));
-var workerSettingsPath = Path.GetFullPath(Path.Combine(
-    builder.Environment.ContentRootPath,
-    "..",
-    "CryptoSignalBot.Worker",
-    "appsettings.json"));
+ConfigureRenderPort(builder);
 
-builder.Configuration.AddJsonFile(workerSettingsPath, optional: false, reloadOnChange: true);
+var projectRoot = ResolveProjectRoot(builder.Environment.ContentRootPath);
+var workerSettingsPath = ResolveWorkerSettingsPath(builder.Environment.ContentRootPath);
+var workerProductionSettingsPath = ResolveEnvironmentSettingsPath(
+    workerSettingsPath,
+    builder.Environment.EnvironmentName);
+builder.Configuration
+    .AddJsonFile(workerSettingsPath, optional: true, reloadOnChange: true)
+    .AddJsonFile(workerProductionSettingsPath, optional: true, reloadOnChange: true)
+    .AddCryptoSignalBotEnvironmentVariables();
 builder.Services.Configure<BotSettings>(builder.Configuration.GetSection("Bot"));
 builder.Services.Configure<BinanceSettings>(builder.Configuration.GetSection("Binance"));
 builder.Services.Configure<CoinGeckoSettings>(builder.Configuration.GetSection("CoinGecko"));
@@ -28,6 +32,7 @@ builder.Services.AddInfrastructure(builder.Configuration);
 
 var app = builder.Build();
 
+app.MapGet("/health", () => Results.Text("OK", "text/plain"));
 app.MapGet("/", () => Results.Content(DashboardPage.Html, "text/html"));
 
 app.MapGet("/api/status", async (
@@ -187,6 +192,53 @@ app.MapPost("/api/commands/{commandName}", async (string commandName, Cancellati
 });
 
 app.Run();
+
+static void ConfigureRenderPort(WebApplicationBuilder builder)
+{
+    var port = Environment.GetEnvironmentVariable("PORT");
+    if (string.IsNullOrWhiteSpace(port))
+    {
+        if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ASPNETCORE_URLS")))
+        {
+            return;
+        }
+
+        port = "5055";
+    }
+
+    builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+}
+
+static string ResolveProjectRoot(string contentRootPath)
+{
+    var sourceRoot = Path.GetFullPath(Path.Combine(contentRootPath, ".."));
+    var workerProject = Path.Combine(sourceRoot, "CryptoSignalBot.Worker", "CryptoSignalBot.Worker.csproj");
+    return File.Exists(workerProject) ? sourceRoot : contentRootPath;
+}
+
+static string ResolveWorkerSettingsPath(string contentRootPath)
+{
+    var candidates = new[]
+    {
+        Environment.GetEnvironmentVariable("CRYPTO_SIGNAL_BOT_WORKER_SETTINGS"),
+        Path.Combine(contentRootPath, "..", "CryptoSignalBot.Worker", "appsettings.json"),
+        Path.Combine(contentRootPath, "..", "worker", "appsettings.json"),
+        Path.Combine(contentRootPath, "appsettings.json")
+    };
+
+    return candidates
+        .Where(candidate => !string.IsNullOrWhiteSpace(candidate))
+        .Select(candidate => Path.GetFullPath(candidate!))
+        .FirstOrDefault(File.Exists) ??
+        Path.Combine(contentRootPath, "appsettings.json");
+}
+
+static string ResolveEnvironmentSettingsPath(string settingsPath, string environmentName)
+{
+    var directory = Path.GetDirectoryName(settingsPath) ?? "";
+    var fileName = Path.GetFileNameWithoutExtension(settingsPath);
+    return Path.Combine(directory, $"{fileName}.{environmentName}.json");
+}
 
 static object ToPaperTradeDto(PaperTradeResult result)
 {
