@@ -18,7 +18,10 @@ if (string.IsNullOrWhiteSpace(logRoot))
 Directory.CreateDirectory(logRoot);
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Information()
+    .MinimumLevel.Override("Microsoft", Serilog.Events.LogEventLevel.Warning)
+    .MinimumLevel.Override("Microsoft.Hosting.Lifetime", Serilog.Events.LogEventLevel.Information)
     .MinimumLevel.Override("Microsoft.EntityFrameworkCore.Database.Command", Serilog.Events.LogEventLevel.Warning)
+    .MinimumLevel.Override("System.Net.Http", Serilog.Events.LogEventLevel.Warning)
     .Enrich.FromLogContext()
     .WriteTo.Console()
     .WriteTo.File(
