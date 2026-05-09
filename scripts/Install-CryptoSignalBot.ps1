@@ -27,6 +27,8 @@ param(
 
     [switch]$InstallDashboardTask,
 
+    [switch]$SkipScheduledTasks,
+
     [switch]$ForceReport,
 
     [switch]$SendEmptyReport,
@@ -165,6 +167,7 @@ if (-not [string]::IsNullOrWhiteSpace($ConfigPath)) {
         'CleanupDailyAt',
         'DashboardUrl',
         'InstallDashboardTask',
+        'SkipScheduledTasks',
         'ForceReport',
         'SendEmptyReport',
         'RunNotificationSmoke',
@@ -237,40 +240,50 @@ $env:Telegram__ChatId = if ([string]::IsNullOrWhiteSpace($TelegramChatId)) { [En
 $env:ConnectionStrings__CryptoSignalBot = if ([string]::IsNullOrWhiteSpace($ConnectionString)) { [Environment]::GetEnvironmentVariable('ConnectionStrings__CryptoSignalBot', 'User') } else { $ConnectionString }
 $env:CRYPTO_SIGNAL_BOT_LOG_DIR = Join-Path $InstallRoot 'logs'
 
-Ensure-TaskFolder -Path $TaskPath
-
 $workerExe = Join-Path $appRoot 'Worker\CryptoSignalBot.Worker.exe'
 $dashboardExe = Join-Path $appRoot 'Dashboard\CryptoSignalBot.Dashboard.exe'
+$dashboardTaskRegistered = $false
 
-$reportArgs = @('--report-watchlist')
-if ($ForceReport) {
-    $reportArgs += '--force-report'
-}
-if ($SendEmptyReport) {
-    $reportArgs += '--send-empty-report'
-}
+if (-not $SkipScheduledTasks) {
+    Ensure-TaskFolder -Path $TaskPath
 
-Register-BotTask `
-    -Name 'CryptoSignalBot Report Watchlist' `
-    -Executable $workerExe `
-    -Arguments ($reportArgs -join ' ') `
-    -Trigger (New-DailyTrigger -TimeOfDay $ReportDailyAt) `
-    -Description 'Runs CryptoSignalBot watchlist report and sends configured notifications.'
+    $reportArgs = @('--report-watchlist')
+    if ($ForceReport) {
+        $reportArgs += '--force-report'
+    }
+    if ($SendEmptyReport) {
+        $reportArgs += '--send-empty-report'
+    }
 
-Register-BotTask `
-    -Name 'CryptoSignalBot Cleanup DB' `
-    -Executable $workerExe `
-    -Arguments '--cleanup-db' `
-    -Trigger (New-DailyTrigger -TimeOfDay $CleanupDailyAt) `
-    -Description 'Runs CryptoSignalBot database retention cleanup.'
-
-if ($InstallDashboardTask) {
     Register-BotTask `
-        -Name 'CryptoSignalBot Dashboard' `
-        -Executable $dashboardExe `
-        -Arguments "--urls $DashboardUrl" `
-        -Trigger (New-ScheduledTaskTrigger -AtLogOn) `
-        -Description 'Starts the local CryptoSignalBot dashboard at user logon.'
+        -Name 'CryptoSignalBot Report Watchlist' `
+        -Executable $workerExe `
+        -Arguments ($reportArgs -join ' ') `
+        -Trigger (New-DailyTrigger -TimeOfDay $ReportDailyAt) `
+        -Description 'Runs CryptoSignalBot watchlist report and sends configured notifications.'
+
+    Register-BotTask `
+        -Name 'CryptoSignalBot Cleanup DB' `
+        -Executable $workerExe `
+        -Arguments '--cleanup-db' `
+        -Trigger (New-DailyTrigger -TimeOfDay $CleanupDailyAt) `
+        -Description 'Runs CryptoSignalBot database retention cleanup.'
+
+    if ($InstallDashboardTask) {
+        try {
+            Register-BotTask `
+                -Name 'CryptoSignalBot Dashboard' `
+                -Executable $dashboardExe `
+                -Arguments "--urls $DashboardUrl" `
+                -Trigger (New-ScheduledTaskTrigger -AtLogOn) `
+                -Description 'Starts the local CryptoSignalBot dashboard at user logon.'
+            $dashboardTaskRegistered = $true
+        }
+        catch {
+            Write-Warning "Dashboard scheduled task not registered: $($_.Exception.Message)"
+            Write-Warning "You can still start the dashboard manually: & `"$dashboardExe`" --urls $DashboardUrl"
+        }
+    }
 }
 
 if ($RunNotificationSmoke) {
@@ -290,6 +303,9 @@ Write-Host ''
 Write-Host 'Next checks:'
 Write-Host "  & `"$workerExe`" --smoke-test notifications"
 Write-Host "  & `"$workerExe`" --report-watchlist --force-report"
-if ($InstallDashboardTask) {
+if ($dashboardTaskRegistered) {
     Write-Host "  Start-ScheduledTask -TaskPath '$TaskPath' -TaskName 'CryptoSignalBot Dashboard'"
+}
+elseif ($InstallDashboardTask) {
+    Write-Host "  & `"$dashboardExe`" --urls $DashboardUrl"
 }

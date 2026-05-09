@@ -1,5 +1,6 @@
 {
   "InstallDashboardTask": true,
+  "SkipScheduledTasks": false,
   "RunNotificationSmoke": true,
   "ReportDailyAt": "08:00",
   "CleanupDailyAt": "03:30",

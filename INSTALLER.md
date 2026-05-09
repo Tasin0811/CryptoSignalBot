@@ -46,6 +46,7 @@ Esempio:
 ```json
 {
   "InstallDashboardTask": true,
+  "SkipScheduledTasks": false,
   "RunNotificationSmoke": true,
   "ReportDailyAt": "08:00",
   "CleanupDailyAt": "03:30",
@@ -65,6 +66,14 @@ Puoi anche sovrascrivere un valore del file direttamente da comando:
 ```powershell
 .\scripts\Install-CryptoSignalBot.ps1 -ConfigPath .\install.local.json -ReportDailyAt 09:00
 ```
+
+Se vuoi installare solo app, credenziali e test notifiche senza creare task Windows:
+
+```powershell
+.\scripts\Install-CryptoSignalBot.ps1 -ConfigPath .\install.local.json -SkipScheduledTasks
+```
+
+La task dashboard e' opzionale: se Windows la blocca, l'installer completa comunque Worker, report, cleanup e ti mostra il comando per avviare la dashboard manualmente.
 
 ## Installazione con Gmail
 
