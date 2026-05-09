@@ -72,6 +72,7 @@ if ($RemoveUserEnvironment) {
     Clear-UserEnvironmentValue -Name 'Telegram__BotToken'
     Clear-UserEnvironmentValue -Name 'Telegram__ChatId'
     Clear-UserEnvironmentValue -Name 'ConnectionStrings__CryptoSignalBot'
+    Clear-UserEnvironmentValue -Name 'CRYPTO_SIGNAL_BOT_LOG_DIR'
 }
 
 if ($RemoveFiles) {

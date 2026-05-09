@@ -143,6 +143,31 @@ app.MapGet("/api/paper/summary", async (
     });
 });
 
+app.MapGet("/api/tasks/status", () => Results.Ok(new
+{
+    tasks = TaskStatusReader.Read()
+}));
+
+app.MapGet("/api/export/signals.csv", async (
+    IPersistenceService persistenceService,
+    int? days,
+    int? take,
+    CancellationToken cancellationToken) =>
+{
+    var lookbackDays = Math.Clamp(days.GetValueOrDefault(30), 1, 3650);
+    var maxSignals = Math.Clamp(take.GetValueOrDefault(1000), 1, 10000);
+    var recentSignals = await persistenceService.GetSignalsSinceAsync(
+        DateTimeOffset.UtcNow.AddDays(-lookbackDays),
+        cancellationToken);
+
+    var csv = CsvExporter.FormatSignals(
+        recentSignals
+            .OrderByDescending(signal => signal.CreatedAt)
+            .Take(maxSignals));
+
+    return Results.Text(csv, "text/csv");
+});
+
 app.MapPost("/api/settings/bot", async (BotSettingsDto input, CancellationToken cancellationToken) =>
 {
     var sanitized = input.Sanitize();
@@ -314,6 +339,7 @@ internal static class DashboardPage
           <button class="secondary" onclick="runCommand('paper-trade-report')">Paper report</button>
           <button class="secondary" onclick="runCommand('backtest-report')">Backtest</button>
           <button class="warning" onclick="runCommand('cleanup-db')">Cleanup DB</button>
+          <button class="secondary" onclick="window.location.href='/api/export/signals.csv?days=30&take=1000'">Export CSV</button>
         </div>
         <p class="status" id="commandStatus">Pronto.</p>
         <pre id="commandOutput" hidden></pre>
@@ -334,6 +360,10 @@ internal static class DashboardPage
           <div class="metric"><span class="status">Open / Expired</span><strong id="paperOpen">0 / 0</strong></div>
         </div>
         <div id="paperTrades"></div>
+      </section>
+      <section>
+        <h2>Task schedulate</h2>
+        <div id="tasks"></div>
       </section>
       <section>
         <h2>Segnali recenti</h2>
@@ -366,7 +396,7 @@ internal static class DashboardPage
       signalCount.textContent = data.database?.signalCountLast7Days ?? 0;
       latestSignal.textContent = data.database?.latestSignalAt ? new Date(data.database.latestSignalAt).toLocaleString() : "-";
       bindSettings(currentSettings);
-      await Promise.all([loadRecentSignals(), loadPaperSummary()]);
+      await Promise.all([loadRecentSignals(), loadPaperSummary(), loadTaskStatus()]);
     }
 
     async function loadRecentSignals() {
@@ -391,6 +421,16 @@ internal static class DashboardPage
       paperClosed.textContent = `${data.wins ?? 0} / ${data.losses ?? 0}`;
       paperOpen.textContent = `${data.openCount ?? 0} / ${data.expiredCount ?? 0}`;
       renderPaperTrades(data.recentClosedTrades || []);
+    }
+
+    async function loadTaskStatus() {
+      const response = await fetch("/api/tasks/status");
+      if (!response.ok) {
+        tasks.innerHTML = '<div class="empty">Stato task non disponibile.</div>';
+        return;
+      }
+      const data = await response.json();
+      renderTasks(data.tasks || []);
     }
 
     function bindSettings(settings) {
@@ -485,6 +525,23 @@ internal static class DashboardPage
           <td class="${Number(trade.returnPercent) >= 0 ? "score" : "warn"}">${escapeHtml(trade.returnPercent)}%</td>
         </tr>`).join("");
       paperTrades.innerHTML = `<table><thead><tr><th>Asset</th><th>Outcome</th><th>Prezzo</th><th>Return</th></tr></thead><tbody>${rows}</tbody></table>`;
+    }
+
+    function renderTasks(items) {
+      if (!items.length) {
+        tasks.innerHTML = '<div class="empty">Nessuna task configurata.</div>';
+        return;
+      }
+      const rows = items.map(task => `
+        <tr>
+          <td><strong>${escapeHtml(task.name)}</strong></td>
+          <td>${task.exists ? '<span class="pill">Installata</span>' : '<span class="warn">Mancante</span>'}</td>
+          <td>${escapeHtml(task.state)}</td>
+          <td>${task.lastRunTime ? new Date(task.lastRunTime).toLocaleString() : "-"}</td>
+          <td>${task.nextRunTime ? new Date(task.nextRunTime).toLocaleString() : "-"}</td>
+          <td>${escapeHtml(task.lastTaskResult)}</td>
+        </tr>`).join("");
+      tasks.innerHTML = `<table><thead><tr><th>Task</th><th>Stato</th><th>Runtime</th><th>Ultimo run</th><th>Prossimo run</th><th>Codice</th></tr></thead><tbody>${rows}</tbody></table>`;
     }
 
     loadStatus();

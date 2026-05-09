@@ -12,9 +12,21 @@
 - [x] TASK-009 RiskEngine.
 - [x] TASK-010 Telegram notifier.
 - [x] TASK-011 Email report giornaliero.
-- [ ] TASK-012 Paper trading engine.
-- [ ] TASK-013 Backtest report.
-- [ ] TASK-014 Dashboard API.
+- [x] TASK-012 Paper trading engine.
+- [x] TASK-013 Backtest report.
+- [x] TASK-014 Dashboard API.
+- [x] TASK-015 Dashboard operativa con azioni rapide.
+- [x] TASK-016 Installer/uninstaller Windows.
+- [x] TASK-017 GitHub setup, CI workflow e script init repository.
+- [x] TASK-018 Segnali beginner-friendly con decisione rapida.
+
+## Extra ancora possibili
+
+- [x] TASK-019 Logging persistente su file in `%ProgramData%\CryptoSignalBot\logs`.
+- [x] TASK-020 Stato Windows Scheduled Tasks nella dashboard.
+- [x] TASK-021 Export segnali in CSV.
+- [x] TASK-022 Backup database.
+- [ ] TASK-023 Test Telegram end-to-end se vuoi usarlo.
 
 ## Prompt pattern
 

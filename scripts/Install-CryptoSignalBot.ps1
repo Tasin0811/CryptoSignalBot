@@ -188,6 +188,7 @@ Set-UserEnvironmentValue -Name 'Email__To' -Value $SmtpTo
 Set-UserEnvironmentValue -Name 'Telegram__BotToken' -Value $TelegramBotToken
 Set-UserEnvironmentValue -Name 'Telegram__ChatId' -Value $TelegramChatId
 Set-UserEnvironmentValue -Name 'ConnectionStrings__CryptoSignalBot' -Value $ConnectionString
+Set-UserEnvironmentValue -Name 'CRYPTO_SIGNAL_BOT_LOG_DIR' -Value (Join-Path $InstallRoot 'logs')
 
 Ensure-TaskFolder -Path $TaskPath
 

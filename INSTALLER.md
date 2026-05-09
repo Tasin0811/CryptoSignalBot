@@ -26,6 +26,7 @@ Questo:
   - `CryptoSignalBot Cleanup DB`
   - `CryptoSignalBot Dashboard` se usi `-InstallDashboardTask`;
 - lascia i dati in `%ProgramData%\CryptoSignalBot\data`;
+- scrive log in `%ProgramData%\CryptoSignalBot\logs`;
 - non scrive password nel repository.
 
 ## Installazione con Gmail
@@ -60,6 +61,12 @@ Le credenziali vengono salvate come variabili ambiente utente:
 ```powershell
 & "$env:ProgramData\CryptoSignalBot\app\Worker\CryptoSignalBot.Worker.exe" --smoke-test notifications
 & "$env:ProgramData\CryptoSignalBot\app\Worker\CryptoSignalBot.Worker.exe" --report-watchlist --force-report
+```
+
+Log:
+
+```powershell
+Get-ChildItem "$env:ProgramData\CryptoSignalBot\logs"
 ```
 
 Dashboard locale:

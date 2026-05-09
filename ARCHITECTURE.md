@@ -12,7 +12,8 @@ Analizzare una watchlist crypto, calcolare indicatori e contesto di mercato, gen
 4. `SignalEngine` combina regole tecniche, contesto e rischio.
 5. `RiskEngine` calcola stop loss, take profit, position size teorica e risk/reward.
 6. `NotificationService` invia Telegram/email.
-7. `PersistenceService` salva candele, segnali, risultati regole, log e configurazioni.
+7. `PersistenceService` salva candele, segnali e risultati regole.
+8. `Dashboard` espone stato, segnali recenti, paper summary, impostazioni non segrete e azioni rapide.
 
 ## Boundary dei progetti
 
@@ -23,8 +24,8 @@ Analizzare una watchlist crypto, calcolare indicatori e contesto di mercato, gen
 
 ## Scheduling
 
-La V1 usa `BackgroundService` e `PeriodicTimer`. Quartz.NET puo' essere introdotto quando serviranno job multipli, calendari o retry piu' sofisticati.
+La V1 usa comandi one-shot della `Worker` eseguiti da Windows Scheduled Tasks. Quartz.NET puo' essere introdotto quando serviranno job multipli, calendari o retry piu' sofisticati dentro un processo sempre attivo.
 
 ## Regola prodotto
 
-Ogni segnale deve spiegare il perche': prezzo, score, tipo segnale, rischio, stop loss, take profit, risk/reward e risultati delle regole principali.
+Ogni segnale deve spiegare il perche' in modo leggibile anche per utenti inesperti: decisione rapida, cosa significa, cosa fare adesso, livelli, invalidazione, score e risultati delle regole principali.

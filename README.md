@@ -127,7 +127,31 @@ Endpoint dashboard utili:
 - `GET /api/status`: stato API/database e impostazioni bot non segrete.
 - `GET /api/signals/recent?days=7&take=30`: ultimi segnali salvati.
 - `GET /api/paper/summary?maxSignals=100&maxFutureCandles=24`: riepilogo paper trading.
+- `GET /api/tasks/status`: stato Windows Scheduled Tasks.
+- `GET /api/export/signals.csv?days=30&take=1000`: export CSV segnali.
 - `POST /api/settings/bot`: salva solo impostazioni bot sanificate.
+- `POST /api/commands/report-watchlist`: invia report watchlist ora.
+- `POST /api/commands/paper-trade-report`: genera paper report ora.
+- `POST /api/commands/backtest-report`: esegue backtest ora.
+- `POST /api/commands/cleanup-db`: pulisce il database ora.
+
+Test automatico locale:
+
+```powershell
+.\scripts\Test-CryptoSignalBot.ps1 -SkipNotificationSmoke
+```
+
+Export segnali CSV dalla dashboard avviata:
+
+```powershell
+.\scripts\Export-CryptoSignalBotSignals.ps1
+```
+
+Backup database LocalDB, se `sqlcmd` e' installato:
+
+```powershell
+.\scripts\Backup-CryptoSignalBotDatabase.ps1
+```
 
 Pulizia DB secondo retention configurata:
 
