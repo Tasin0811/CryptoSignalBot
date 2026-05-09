@@ -40,6 +40,20 @@ Per installare il bot su una macchina Windows sempre accesa usa:
 .\scripts\Install-CryptoSignalBot.ps1 -InstallDashboardTask
 ```
 
+Installazione completa con test immediato delle notifiche:
+
+```powershell
+.\scripts\Install-CryptoSignalBot.ps1 `
+  -InstallDashboardTask `
+  -RunNotificationSmoke `
+  -SmtpUser "tuamail@gmail.com" `
+  -SmtpPassword "APP_PASSWORD_GOOGLE" `
+  -SmtpFrom "tuamail@gmail.com" `
+  -SmtpTo "destinatario@gmail.com" `
+  -TelegramBotToken "TOKEN_TELEGRAM" `
+  -TelegramChatId "CHAT_ID_TELEGRAM"
+```
+
 Per rimuoverlo:
 
 ```powershell

@@ -7,7 +7,7 @@ Questi script servono per installare CryptoSignalBot su una macchina Windows sem
 - Windows 10/11 o Windows Server.
 - .NET 8 SDK se installi partendo dai sorgenti.
 - SQL Server Express LocalDB oppure una connection string SQL Server valida.
-- Credenziali Gmail/Telegram configurate come variabili ambiente utente.
+- Credenziali Gmail/Telegram configurate come variabili ambiente utente oppure passate all'installer.
 
 ## Installazione rapida
 
@@ -47,6 +47,27 @@ Le credenziali vengono salvate come variabili ambiente utente:
 - `Email__From`
 - `Email__To`
 
+## Installazione con Gmail e Telegram
+
+```powershell
+.\scripts\Install-CryptoSignalBot.ps1 `
+  -InstallDashboardTask `
+  -RunNotificationSmoke `
+  -SmtpUser "tuamail@gmail.com" `
+  -SmtpPassword "APP_PASSWORD_GOOGLE" `
+  -SmtpFrom "tuamail@gmail.com" `
+  -SmtpTo "destinatario@gmail.com" `
+  -TelegramBotToken "TOKEN_TELEGRAM" `
+  -TelegramChatId "CHAT_ID_TELEGRAM"
+```
+
+L'installer salva i valori come variabili ambiente utente e lancia subito un test reale se usi `-RunNotificationSmoke`.
+
+Variabili Telegram salvate:
+
+- `Telegram__BotToken`
+- `Telegram__ChatId`
+
 ## Orari custom
 
 ```powershell
@@ -57,6 +78,8 @@ Le credenziali vengono salvate come variabili ambiente utente:
 ```
 
 ## Test dopo installazione
+
+Se non hai usato `-RunNotificationSmoke`, puoi testare manualmente:
 
 ```powershell
 & "$env:ProgramData\CryptoSignalBot\app\Worker\CryptoSignalBot.Worker.exe" --smoke-test notifications

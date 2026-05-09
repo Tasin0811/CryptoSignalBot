@@ -29,6 +29,8 @@ param(
 
     [switch]$SendEmptyReport,
 
+    [switch]$RunNotificationSmoke,
+
     [string]$SmtpUser = '',
 
     [string]$SmtpPassword = '',
@@ -190,6 +192,15 @@ Set-UserEnvironmentValue -Name 'Telegram__ChatId' -Value $TelegramChatId
 Set-UserEnvironmentValue -Name 'ConnectionStrings__CryptoSignalBot' -Value $ConnectionString
 Set-UserEnvironmentValue -Name 'CRYPTO_SIGNAL_BOT_LOG_DIR' -Value (Join-Path $InstallRoot 'logs')
 
+$env:Email__Username = if ([string]::IsNullOrWhiteSpace($SmtpUser)) { [Environment]::GetEnvironmentVariable('Email__Username', 'User') } else { $SmtpUser }
+$env:Email__Password = if ([string]::IsNullOrWhiteSpace($SmtpPassword)) { [Environment]::GetEnvironmentVariable('Email__Password', 'User') } else { $SmtpPassword }
+$env:Email__From = if ([string]::IsNullOrWhiteSpace($SmtpFrom)) { [Environment]::GetEnvironmentVariable('Email__From', 'User') } else { $SmtpFrom }
+$env:Email__To = if ([string]::IsNullOrWhiteSpace($SmtpTo)) { [Environment]::GetEnvironmentVariable('Email__To', 'User') } else { $SmtpTo }
+$env:Telegram__BotToken = if ([string]::IsNullOrWhiteSpace($TelegramBotToken)) { [Environment]::GetEnvironmentVariable('Telegram__BotToken', 'User') } else { $TelegramBotToken }
+$env:Telegram__ChatId = if ([string]::IsNullOrWhiteSpace($TelegramChatId)) { [Environment]::GetEnvironmentVariable('Telegram__ChatId', 'User') } else { $TelegramChatId }
+$env:ConnectionStrings__CryptoSignalBot = if ([string]::IsNullOrWhiteSpace($ConnectionString)) { [Environment]::GetEnvironmentVariable('ConnectionStrings__CryptoSignalBot', 'User') } else { $ConnectionString }
+$env:CRYPTO_SIGNAL_BOT_LOG_DIR = Join-Path $InstallRoot 'logs'
+
 Ensure-TaskFolder -Path $TaskPath
 
 $workerExe = Join-Path $appRoot 'Worker\CryptoSignalBot.Worker.exe'
@@ -224,6 +235,15 @@ if ($InstallDashboardTask) {
         -Arguments "--urls $DashboardUrl" `
         -Trigger (New-ScheduledTaskTrigger -AtLogOn) `
         -Description 'Starts the local CryptoSignalBot dashboard at user logon.'
+}
+
+if ($RunNotificationSmoke) {
+    if ($PSCmdlet.ShouldProcess($workerExe, 'Run notification smoke test')) {
+        & $workerExe --smoke-test notifications
+        if ($LASTEXITCODE -ne 0) {
+            throw "Notification smoke test failed with exit code $LASTEXITCODE."
+        }
+    }
 }
 
 Write-Host ''
