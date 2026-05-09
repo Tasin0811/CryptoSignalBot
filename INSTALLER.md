@@ -132,6 +132,12 @@ Se non hai usato `-RunNotificationSmoke`, puoi testare manualmente:
 & "$env:ProgramData\CryptoSignalBot\app\Worker\CryptoSignalBot.Worker.exe" --report-watchlist --force-report
 ```
 
+Test diretto solo Telegram:
+
+```powershell
+.\scripts\Test-TelegramNotification.ps1
+```
+
 Log:
 
 ```powershell

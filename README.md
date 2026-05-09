@@ -98,6 +98,12 @@ Smoke test notifiche Gmail/Telegram:
 dotnet run --project .\CryptoSignalBot.Worker -- --smoke-test notifications
 ```
 
+Test diretto solo Telegram, utile per verificare token/chat id senza aspettare un segnale:
+
+```powershell
+.\scripts\Test-TelegramNotification.ps1
+```
+
 Analisi singola con dati Binance reali:
 
 ```powershell

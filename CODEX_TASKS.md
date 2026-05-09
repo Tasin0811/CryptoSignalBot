@@ -26,7 +26,7 @@
 - [x] TASK-020 Stato Windows Scheduled Tasks nella dashboard.
 - [x] TASK-021 Export segnali in CSV.
 - [x] TASK-022 Backup database.
-- [ ] TASK-023 Test Telegram end-to-end se vuoi usarlo.
+- [x] TASK-023 Test Telegram end-to-end con script dedicato.
 
 ## Prompt pattern
 
