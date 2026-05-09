@@ -1,0 +1,26 @@
+bin/
+obj/
+.vs/
+.vscode/
+.idea/
+.dotnet_home/
+artifacts/
+*.user
+*.suo
+*.db
+*.log
+logs/
+TestResults/
+*.trx
+*.coverage
+*.coveragexml
+
+# Local machine settings and secrets
+*.local.json
+secrets.json
+.env
+*.env
+
+# Published local installs
+publish/
+release/

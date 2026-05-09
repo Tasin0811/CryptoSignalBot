@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <ProjectReference Include="..\CryptoSignalBot.Domain\CryptoSignalBot.Domain.csproj" />
+    <ProjectReference Include="..\CryptoSignalBot.Infrastructure\CryptoSignalBot.Infrastructure.csproj" />
+    <ProjectReference Include="..\CryptoSignalBot.Application\CryptoSignalBot.Application.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+</Project>
