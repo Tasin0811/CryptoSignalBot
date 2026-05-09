@@ -40,6 +40,16 @@ Per installare il bot su una macchina Windows sempre accesa usa:
 .\scripts\Install-CryptoSignalBot.ps1 -InstallDashboardTask
 ```
 
+Metodo automatico da file locale:
+
+```powershell
+Copy-Item .\install.example.json .\install.local.json
+notepad .\install.local.json
+.\scripts\Install-CryptoSignalBot.ps1 -ConfigPath .\install.local.json
+```
+
+`install.local.json` non viene caricato su GitHub.
+
 Installazione completa con test immediato delle notifiche:
 
 ```powershell

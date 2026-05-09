@@ -11,6 +11,8 @@ Run this from the repository root on the target machine.
 #>
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
+    [string]$ConfigPath = '',
+
     [string]$ProjectRoot = '',
 
     [string]$InstallRoot = "$env:ProgramData\CryptoSignalBot",
@@ -150,6 +152,40 @@ function Set-UserEnvironmentValue {
     if ($PSCmdlet.ShouldProcess("User environment variable $Name", 'Set')) {
         [Environment]::SetEnvironmentVariable($Name, $Value, 'User')
     }
+}
+
+if (-not [string]::IsNullOrWhiteSpace($ConfigPath)) {
+    $resolvedConfigPath = (Resolve-Path $ConfigPath).Path
+    $installConfig = Get-Content -Raw -Path $resolvedConfigPath | ConvertFrom-Json
+    $configurableParameters = @(
+        'ProjectRoot',
+        'InstallRoot',
+        'TaskPath',
+        'ReportDailyAt',
+        'CleanupDailyAt',
+        'DashboardUrl',
+        'InstallDashboardTask',
+        'ForceReport',
+        'SendEmptyReport',
+        'RunNotificationSmoke',
+        'SmtpUser',
+        'SmtpPassword',
+        'SmtpFrom',
+        'SmtpTo',
+        'TelegramBotToken',
+        'TelegramChatId',
+        'ConnectionString')
+
+    foreach ($parameterName in $configurableParameters) {
+        $property = $installConfig.PSObject.Properties[$parameterName]
+        if ($null -eq $property -or $null -eq $property.Value -or $PSBoundParameters.ContainsKey($parameterName)) {
+            continue
+        }
+
+        Set-Variable -Name $parameterName -Value $property.Value -WhatIf:$false
+    }
+
+    Write-Host "Loaded installer config: $resolvedConfigPath"
 }
 
 $ProjectRoot = Resolve-ProjectRoot -Value $ProjectRoot

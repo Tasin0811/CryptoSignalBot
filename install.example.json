@@ -1,0 +1,14 @@
+{
+  "InstallDashboardTask": true,
+  "RunNotificationSmoke": true,
+  "ReportDailyAt": "08:00",
+  "CleanupDailyAt": "03:30",
+  "DashboardUrl": "http://localhost:5055",
+  "SmtpUser": "tuamail@gmail.com",
+  "SmtpPassword": "APP_PASSWORD_GOOGLE",
+  "SmtpFrom": "tuamail@gmail.com",
+  "SmtpTo": "destinatario@gmail.com",
+  "TelegramBotToken": "TOKEN_TELEGRAM",
+  "TelegramChatId": "CHAT_ID_TELEGRAM",
+  "ConnectionString": ""
+}

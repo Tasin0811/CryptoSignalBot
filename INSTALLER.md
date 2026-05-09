@@ -29,6 +29,43 @@ Questo:
 - scrive log in `%ProgramData%\CryptoSignalBot\logs`;
 - non scrive password nel repository.
 
+## Installazione automatica da file locale
+
+Metodo consigliato per la tua macchina o per una macchina sempre accesa:
+
+```powershell
+Copy-Item .\install.example.json .\install.local.json
+notepad .\install.local.json
+.\scripts\Install-CryptoSignalBot.ps1 -ConfigPath .\install.local.json
+```
+
+`install.local.json` resta solo sul PC locale: e' escluso da GitHub tramite `.gitignore`.
+
+Esempio:
+
+```json
+{
+  "InstallDashboardTask": true,
+  "RunNotificationSmoke": true,
+  "ReportDailyAt": "08:00",
+  "CleanupDailyAt": "03:30",
+  "DashboardUrl": "http://localhost:5055",
+  "SmtpUser": "tuamail@gmail.com",
+  "SmtpPassword": "APP_PASSWORD_GOOGLE",
+  "SmtpFrom": "tuamail@gmail.com",
+  "SmtpTo": "destinatario@gmail.com",
+  "TelegramBotToken": "TOKEN_TELEGRAM",
+  "TelegramChatId": "CHAT_ID_TELEGRAM",
+  "ConnectionString": ""
+}
+```
+
+Puoi anche sovrascrivere un valore del file direttamente da comando:
+
+```powershell
+.\scripts\Install-CryptoSignalBot.ps1 -ConfigPath .\install.local.json -ReportDailyAt 09:00
+```
+
 ## Installazione con Gmail
 
 ```powershell
