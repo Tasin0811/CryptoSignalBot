@@ -1,6 +1,7 @@
 using CryptoSignalBot.Domain.Configuration;
 using CryptoSignalBot.Domain.Enums;
 using CryptoSignalBot.Domain.Market;
+using CryptoSignalBot.Domain.PaperTrading;
 using CryptoSignalBot.Domain.Signals;
 using CryptoSignalBot.Infrastructure.Persistence;
 using Microsoft.Data.Sqlite;
@@ -71,6 +72,40 @@ public sealed class EfPersistenceServiceTests
         var remainingSignal = Assert.Single(await database.Context.Signals.ToArrayAsync());
         Assert.Equal(retainedCandleTime, remainingCandle.OpenTime);
         Assert.Equal(retainedSignalTime.UtcDateTime, remainingSignal.CreatedAt);
+    }
+
+    [Fact]
+    public async Task BuildPaperPortfolioReportAsync_SimulatesBudgetAndProfit()
+    {
+        await using var database = await CreateDatabaseAsync();
+        var service = CreateService(database.Context);
+        var signalTime = new DateTimeOffset(2026, 5, 9, 12, 0, 0, TimeSpan.Zero);
+
+        await service.SaveSignalAsync(CreateSignal(createdAt: signalTime, price: 100m));
+        await service.SaveCandlesAsync(
+        [
+            new Candle(
+                "BTCUSDT",
+                "1h",
+                signalTime.UtcDateTime.AddHours(1),
+                signalTime.UtcDateTime.AddHours(2).AddSeconds(-1),
+                100m,
+                106m,
+                99m,
+                105m,
+                1000m)
+        ]);
+
+        var report = await service.BuildPaperPortfolioReportAsync(500m, maxSignals: 10, maxFutureCandles: 5);
+
+        var trade = Assert.Single(report.Trades);
+        Assert.Equal(500m, report.InitialBudget);
+        Assert.Equal(PaperTradeOutcome.TakeProfit1, trade.Outcome);
+        Assert.Equal(100m, trade.Invested);
+        Assert.Equal(105m, trade.CurrentValue);
+        Assert.Equal(505m, report.Equity);
+        Assert.Equal(5m, report.ProfitLoss);
+        Assert.Equal(1m, trade.Units);
     }
 
     private static async Task<TestDatabase> CreateDatabaseAsync()

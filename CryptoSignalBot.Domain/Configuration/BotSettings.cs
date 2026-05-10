@@ -14,4 +14,5 @@ public sealed class BotSettings
     public bool DryRunOnly { get; init; } = true;
     public decimal AccountBalance { get; init; } = 1000m;
     public decimal RiskPercent { get; init; } = 0.01m;
+    public decimal PaperPortfolioInitialBudget { get; init; } = 500m;
 }

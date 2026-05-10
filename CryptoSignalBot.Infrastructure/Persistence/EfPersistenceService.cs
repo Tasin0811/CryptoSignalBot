@@ -172,6 +172,69 @@ public sealed class EfPersistenceService(CryptoSignalBotDbContext dbContext, IOp
         return new PaperTradeReport(DateTimeOffset.UtcNow, results);
     }
 
+    public async Task<PaperPortfolioReport> BuildPaperPortfolioReportAsync(
+        decimal initialBudget,
+        int maxSignals,
+        int maxFutureCandles,
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureDatabaseAsync(cancellationToken);
+
+        var startingBudget = initialBudget > 0m ? initialBudget : botSettings.Value.PaperPortfolioInitialBudget;
+        var cash = startingBudget;
+        var openPositionValue = 0m;
+        var availableAt = DateTime.MinValue;
+        var trades = new List<PaperPortfolioTrade>();
+        var signals = await dbContext.Signals
+            .AsNoTracking()
+            .Where(signal => signal.Score >= botSettings.Value.MinScoreToNotify &&
+                             signal.StopLoss != null &&
+                             signal.TakeProfit1 != null)
+            .OrderByDescending(signal => signal.CreatedAt)
+            .Take(Math.Max(1, maxSignals))
+            .OrderBy(signal => signal.CreatedAt)
+            .ToListAsync(cancellationToken);
+
+        foreach (var signal in signals)
+        {
+            if (signal.CreatedAt <= availableAt || cash <= 0m)
+            {
+                continue;
+            }
+
+            var futureCandles = await dbContext.MarketCandles
+                .AsNoTracking()
+                .Where(candle => candle.Symbol == signal.Symbol &&
+                                 candle.Timeframe == signal.Timeframe &&
+                                 candle.OpenTime > signal.CreatedAt)
+                .OrderBy(candle => candle.OpenTime)
+                .Take(Math.Max(1, maxFutureCandles))
+                .ToListAsync(cancellationToken);
+
+            var trade = CreatePortfolioTrade(signal, futureCandles, cash, botSettings.Value.RiskPercent);
+            if (trade is null)
+            {
+                continue;
+            }
+
+            cash -= trade.Invested;
+            if (trade.IsClosed)
+            {
+                cash += trade.CurrentValue;
+                availableAt = trade.ExitTime ?? signal.CreatedAt;
+            }
+            else
+            {
+                openPositionValue += trade.CurrentValue;
+                availableAt = DateTime.MaxValue;
+            }
+
+            trades.Add(trade);
+        }
+
+        return new PaperPortfolioReport(DateTimeOffset.UtcNow, startingBudget, cash, openPositionValue, trades);
+    }
+
     public async Task<int> CleanupDatabaseAsync(
         DateTimeOffset retainCandlesSince,
         DateTimeOffset retainSignalsSince,
@@ -307,6 +370,94 @@ public sealed class EfPersistenceService(CryptoSignalBotDbContext dbContext, IOp
         return futureCandles.Count < maxFutureCandles
             ? CreatePaperResult(signal, PaperTradeOutcome.Open, null, null)
             : CreatePaperResult(signal, PaperTradeOutcome.Expired, futureCandles[^1].OpenTime, futureCandles[^1].ClosePrice);
+    }
+
+    private static PaperPortfolioTrade? CreatePortfolioTrade(
+        SignalEntity signal,
+        IReadOnlyList<MarketCandleEntity> futureCandles,
+        decimal cash,
+        decimal riskPercent)
+    {
+        if (signal.Price <= 0m || signal.StopLoss is null || signal.TakeProfit1 is null || signal.StopLoss >= signal.Price)
+        {
+            return null;
+        }
+
+        var stopDistance = signal.Price - signal.StopLoss.Value;
+        var riskAmount = cash * Math.Clamp(riskPercent, 0.001m, 0.20m);
+        var riskBasedUnits = riskAmount / stopDistance;
+        var cashBasedUnits = cash / signal.Price;
+        var units = Math.Min(riskBasedUnits, cashBasedUnits);
+        if (units <= 0m)
+        {
+            return null;
+        }
+
+        var invested = units * signal.Price;
+        PaperTradeOutcome outcome;
+        DateTime? exitTime = null;
+        decimal? exitPrice = null;
+        var currentPrice = signal.Price;
+
+        foreach (var candle in futureCandles)
+        {
+            currentPrice = candle.ClosePrice;
+            if (candle.LowPrice <= signal.StopLoss.Value)
+            {
+                outcome = PaperTradeOutcome.StopLoss;
+                exitTime = candle.OpenTime;
+                exitPrice = signal.StopLoss.Value;
+                currentPrice = exitPrice.Value;
+                return CreatePortfolioTrade(signal, units, invested, exitTime, exitPrice, currentPrice, outcome);
+            }
+
+            if (candle.HighPrice >= signal.TakeProfit1.Value)
+            {
+                outcome = PaperTradeOutcome.TakeProfit1;
+                exitTime = candle.OpenTime;
+                exitPrice = signal.TakeProfit1.Value;
+                currentPrice = exitPrice.Value;
+                return CreatePortfolioTrade(signal, units, invested, exitTime, exitPrice, currentPrice, outcome);
+            }
+        }
+
+        if (futureCandles.Count == 0)
+        {
+            return CreatePortfolioTrade(signal, units, invested, null, null, currentPrice, PaperTradeOutcome.Open);
+        }
+
+        var lastCandle = futureCandles[^1];
+        return CreatePortfolioTrade(
+            signal,
+            units,
+            invested,
+            lastCandle.OpenTime,
+            lastCandle.ClosePrice,
+            lastCandle.ClosePrice,
+            PaperTradeOutcome.Expired);
+    }
+
+    private static PaperPortfolioTrade CreatePortfolioTrade(
+        SignalEntity signal,
+        decimal units,
+        decimal invested,
+        DateTime? exitTime,
+        decimal? exitPrice,
+        decimal currentPrice,
+        PaperTradeOutcome outcome)
+    {
+        return new PaperPortfolioTrade(
+            signal.Id,
+            signal.Symbol,
+            signal.Timeframe,
+            signal.CreatedAt,
+            signal.Price,
+            units,
+            invested,
+            exitTime,
+            exitPrice,
+            currentPrice,
+            outcome);
     }
 
     private static PaperTradeResult CreatePaperResult(

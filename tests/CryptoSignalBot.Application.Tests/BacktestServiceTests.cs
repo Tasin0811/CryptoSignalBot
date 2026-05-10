@@ -118,6 +118,11 @@ public sealed class BacktestServiceTests
             throw new NotSupportedException();
         }
 
+        public Task<PaperPortfolioReport> BuildPaperPortfolioReportAsync(decimal initialBudget, int maxSignals, int maxFutureCandles, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
         public Task<int> CleanupDatabaseAsync(DateTimeOffset retainCandlesSince, DateTimeOffset retainSignalsSince, CancellationToken cancellationToken = default)
         {
             throw new NotSupportedException();

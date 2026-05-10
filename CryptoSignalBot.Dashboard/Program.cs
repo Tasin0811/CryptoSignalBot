@@ -148,6 +148,47 @@ app.MapGet("/api/paper/summary", async (
     });
 });
 
+app.MapGet("/api/paper/portfolio", async (
+    IPersistenceService persistenceService,
+    IOptions<BotSettings> botSettings,
+    decimal? initialBudget,
+    int? maxSignals,
+    int? maxFutureCandles,
+    CancellationToken cancellationToken) =>
+{
+    var budget = Math.Clamp(
+        initialBudget.GetValueOrDefault(botSettings.Value.PaperPortfolioInitialBudget),
+        10m,
+        1_000_000m);
+    var signalLimit = Math.Clamp(maxSignals.GetValueOrDefault(100), 1, 500);
+    var candleLimit = Math.Clamp(maxFutureCandles.GetValueOrDefault(24), 1, 500);
+    var report = await persistenceService.BuildPaperPortfolioReportAsync(
+        budget,
+        signalLimit,
+        candleLimit,
+        cancellationToken);
+
+    return Results.Ok(new
+    {
+        report.CreatedAt,
+        report.InitialBudget,
+        report.Cash,
+        report.OpenPositionValue,
+        report.Equity,
+        report.ProfitLoss,
+        report.ProfitLossPercent,
+        report.ClosedCount,
+        report.OpenCount,
+        report.Wins,
+        report.Losses,
+        report.WinRate,
+        trades = report.Trades
+            .OrderByDescending(trade => trade.EntryTime)
+            .Take(20)
+            .Select(ToPaperPortfolioTradeDto)
+    });
+});
+
 app.MapGet("/api/tasks/status", () => Results.Ok(new
 {
     tasks = TaskStatusReader.Read()
@@ -260,6 +301,28 @@ static object ToPaperTradeDto(PaperTradeResult result)
     };
 }
 
+static object ToPaperPortfolioTradeDto(PaperPortfolioTrade trade)
+{
+    return new
+    {
+        trade.SignalId,
+        trade.Symbol,
+        trade.Timeframe,
+        trade.EntryTime,
+        trade.EntryPrice,
+        trade.Units,
+        trade.Invested,
+        trade.ExitTime,
+        trade.ExitPrice,
+        trade.CurrentPrice,
+        Outcome = trade.Outcome.ToString(),
+        trade.IsClosed,
+        trade.CurrentValue,
+        trade.ProfitLoss,
+        trade.ProfitLossPercent
+    };
+}
+
 static async Task UpdateBotSettingsAsync(
     string appsettingsPath,
     BotSettingsDto settings,
@@ -290,7 +353,8 @@ static async Task UpdateBotSettingsAsync(
         ["RetainSignalsDays"] = settings.RetainSignalsDays,
         ["DryRunOnly"] = settings.DryRunOnly,
         ["AccountBalance"] = settings.AccountBalance,
-        ["RiskPercent"] = settings.RiskPercent
+        ["RiskPercent"] = settings.RiskPercent,
+        ["PaperPortfolioInitialBudget"] = settings.PaperPortfolioInitialBudget
     };
 
     var json = rootObject.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
@@ -379,6 +443,7 @@ internal static class DashboardPage
         <div><label>Retain segnali giorni</label><input id="retainSignals" type="number" min="1"></div>
         <div><label>Balance teorico</label><input id="accountBalance" type="number" min="0" step="0.01"></div>
         <div><label>Rischio per trade</label><input id="riskPercent" type="number" min="0" max="0.2" step="0.001"></div>
+        <div><label>Budget test portfolio</label><input id="paperPortfolioInitialBudget" type="number" min="10" step="10"></div>
       </div>
       <label><input id="dryRunOnly" type="checkbox"> Dry run only</label>
       <p class="status" id="saveStatus">Le password restano fuori da questa schermata.</p>
@@ -412,6 +477,14 @@ internal static class DashboardPage
           <div class="metric"><span class="status">Open / Expired</span><strong id="paperOpen">0 / 0</strong></div>
         </div>
         <div id="paperTrades"></div>
+        <h2>Portfolio test</h2>
+        <div class="cards">
+          <div class="metric"><span class="status">Budget iniziale</span><strong id="portfolioBudget">0</strong></div>
+          <div class="metric"><span class="status">Equity simulata</span><strong id="portfolioEquity">0</strong></div>
+          <div class="metric"><span class="status">Guadagno/perdita</span><strong id="portfolioPnl">0</strong></div>
+          <div class="metric"><span class="status">Win rate</span><strong id="portfolioWinRate">0%</strong></div>
+        </div>
+        <div id="portfolioTrades"></div>
       </section>
       <section>
         <h2>Task schedulate</h2>
@@ -448,7 +521,7 @@ internal static class DashboardPage
       signalCount.textContent = data.database?.signalCountLast7Days ?? 0;
       latestSignal.textContent = data.database?.latestSignalAt ? new Date(data.database.latestSignalAt).toLocaleString() : "-";
       bindSettings(currentSettings);
-      await Promise.all([loadRecentSignals(), loadPaperSummary(), loadTaskStatus()]);
+      await Promise.all([loadRecentSignals(), loadPaperSummary(), loadPaperPortfolio(), loadTaskStatus()]);
     }
 
     async function loadRecentSignals() {
@@ -497,6 +570,7 @@ internal static class DashboardPage
       retainSignals.value = settings.retainSignalsDays;
       accountBalance.value = settings.accountBalance;
       riskPercent.value = settings.riskPercent;
+      paperPortfolioInitialBudget.value = settings.paperPortfolioInitialBudget;
       dryRunOnly.checked = settings.dryRunOnly;
     }
 
@@ -513,7 +587,8 @@ internal static class DashboardPage
         retainSignalsDays: Number(retainSignals.value),
         dryRunOnly: dryRunOnly.checked,
         accountBalance: Number(accountBalance.value),
-        riskPercent: Number(riskPercent.value)
+        riskPercent: Number(riskPercent.value),
+        paperPortfolioInitialBudget: Number(paperPortfolioInitialBudget.value)
       };
       saveStatus.textContent = "Salvataggio...";
       const response = await fetch("/api/settings/bot", {
@@ -540,7 +615,7 @@ internal static class DashboardPage
         commandStatus.textContent = data.ok ? "Comando completato." : "Comando terminato con errore.";
         commandOutput.hidden = false;
         commandOutput.textContent = [data.output, data.error].filter(Boolean).join("\n\n");
-        await Promise.all([loadRecentSignals(), loadPaperSummary()]);
+        await Promise.all([loadRecentSignals(), loadPaperSummary(), loadPaperPortfolio()]);
       } catch {
         commandStatus.textContent = "Errore durante l'esecuzione.";
       } finally {
@@ -577,6 +652,37 @@ internal static class DashboardPage
           <td class="${Number(trade.returnPercent) >= 0 ? "score" : "warn"}">${escapeHtml(trade.returnPercent)}%</td>
         </tr>`).join("");
       paperTrades.innerHTML = `<table><thead><tr><th>Asset</th><th>Outcome</th><th>Prezzo</th><th>Return</th></tr></thead><tbody>${rows}</tbody></table>`;
+    }
+
+    async function loadPaperPortfolio() {
+      const response = await fetch(`/api/paper/portfolio?initialBudget=${encodeURIComponent(currentSettings?.paperPortfolioInitialBudget ?? 500)}&maxSignals=100&maxFutureCandles=24`);
+      if (!response.ok) {
+        portfolioTrades.innerHTML = '<div class="empty">Portfolio test non disponibile.</div>';
+        return;
+      }
+      const data = await response.json();
+      portfolioBudget.textContent = money(data.initialBudget);
+      portfolioEquity.textContent = money(data.equity);
+      portfolioPnl.textContent = `${money(data.profitLoss)} (${data.profitLossPercent ?? 0}%)`;
+      portfolioPnl.className = Number(data.profitLoss) >= 0 ? "ok" : "bad";
+      portfolioWinRate.textContent = `${data.winRate ?? 0}%`;
+      renderPortfolioTrades(data.trades || []);
+    }
+
+    function renderPortfolioTrades(trades) {
+      if (!trades.length) {
+        portfolioTrades.innerHTML = '<div class="empty">Nessun acquisto simulato disponibile.</div>';
+        return;
+      }
+      const rows = trades.map(trade => `
+        <tr>
+          <td><strong>${escapeHtml(trade.symbol)}</strong><br>${escapeHtml(trade.timeframe)}</td>
+          <td><span class="pill">${escapeHtml(trade.outcome)}</span><br><span class="status">${new Date(trade.entryTime).toLocaleString()}</span></td>
+          <td>${money(trade.invested)}<br><span class="status">${money(trade.units)} units</span></td>
+          <td>${money(trade.entryPrice)}<br><span class="status">exit ${money(trade.exitPrice ?? trade.currentPrice)}</span></td>
+          <td class="${Number(trade.profitLoss) >= 0 ? "score" : "warn"}">${money(trade.profitLoss)} (${trade.profitLossPercent}%)</td>
+        </tr>`).join("");
+      portfolioTrades.innerHTML = `<table><thead><tr><th>Asset</th><th>Stato</th><th>Investito</th><th>Prezzi</th><th>P/L</th></tr></thead><tbody>${rows}</tbody></table>`;
     }
 
     function renderTasks(items) {

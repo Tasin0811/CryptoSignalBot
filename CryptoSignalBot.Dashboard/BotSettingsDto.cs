@@ -14,7 +14,8 @@ public sealed record BotSettingsDto(
     int RetainSignalsDays,
     bool DryRunOnly,
     decimal AccountBalance,
-    decimal RiskPercent)
+    decimal RiskPercent,
+    decimal PaperPortfolioInitialBudget)
 {
     public static BotSettingsDto From(BotSettings settings)
     {
@@ -30,7 +31,8 @@ public sealed record BotSettingsDto(
             settings.RetainSignalsDays,
             settings.DryRunOnly,
             settings.AccountBalance,
-            settings.RiskPercent);
+            settings.RiskPercent,
+            settings.PaperPortfolioInitialBudget);
     }
 
     public BotSettingsDto Sanitize()
@@ -47,7 +49,8 @@ public sealed record BotSettingsDto(
             RetainCandlesDays = Math.Clamp(RetainCandlesDays, 1, 3650),
             RetainSignalsDays = Math.Clamp(RetainSignalsDays, 1, 3650),
             AccountBalance = Math.Max(0m, AccountBalance),
-            RiskPercent = Math.Clamp(RiskPercent, 0m, 0.20m)
+            RiskPercent = Math.Clamp(RiskPercent, 0m, 0.20m),
+            PaperPortfolioInitialBudget = Math.Clamp(PaperPortfolioInitialBudget, 10m, 1_000_000m)
         };
     }
 

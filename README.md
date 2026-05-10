@@ -92,6 +92,8 @@ dotnet run --project .\CryptoSignalBot.Dashboard -- --urls http://localhost:5055
 
 Aprire `http://localhost:5055`. Dalla dashboard puoi modificare impostazioni non segrete e lanciare report, paper report, backtest e cleanup DB.
 
+La dashboard include anche un portfolio test: parte da un budget teorico, default `500`, usa i segnali salvati sopra soglia, simula acquisti/vendite con stop loss, take profit o scadenza e mostra equity, guadagno/perdita e trade recenti. Non esegue ordini reali.
+
 Smoke test notifiche Gmail/Telegram:
 
 ```powershell
@@ -157,6 +159,7 @@ Endpoint dashboard utili:
 - `GET /api/status`: stato API/database e impostazioni bot non segrete.
 - `GET /api/signals/recent?days=7&take=30`: ultimi segnali salvati.
 - `GET /api/paper/summary?maxSignals=100&maxFutureCandles=24`: riepilogo paper trading.
+- `GET /api/paper/portfolio?initialBudget=500&maxSignals=100&maxFutureCandles=24`: portfolio simulato con P/L.
 - `GET /api/tasks/status`: stato Windows Scheduled Tasks.
 - `GET /api/export/signals.csv?days=30&take=1000`: export CSV segnali.
 - `POST /api/settings/bot`: salva solo impostazioni bot sanificate.
