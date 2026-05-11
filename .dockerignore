@@ -20,3 +20,4 @@ secrets.json
 *.trx
 *.coverage
 *.coveragexml
+!scripts/run-scheduler.sh

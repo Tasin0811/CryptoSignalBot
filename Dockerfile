@@ -23,6 +23,8 @@ ENV CRYPTO_SIGNAL_BOT_WORKER_SETTINGS=/app/worker/appsettings.json
 WORKDIR /app
 COPY --from=build /out/worker ./worker
 COPY --from=build /out/dashboard ./dashboard
+COPY scripts/run-scheduler.sh ./scripts/run-scheduler.sh
+RUN chmod +x ./scripts/run-scheduler.sh
 
 EXPOSE 5055
 WORKDIR /app/dashboard

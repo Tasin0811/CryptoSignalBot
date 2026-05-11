@@ -1,0 +1,44 @@
+services:
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cryptosignalbot:latest
+    container_name: cryptosignalbot-dashboard
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      PORT: 5055
+      DATABASE_CONNECTION_STRING: Data Source=/app/data/cryptosignalbot.db
+      CRYPTO_SIGNAL_BOT_LOG_DIR: /app/logs
+    ports:
+      - "5055:5055"
+    volumes:
+      - cryptosignalbot-data:/app/data
+      - cryptosignalbot-logs:/app/logs
+
+  scheduler:
+    image: cryptosignalbot:latest
+    container_name: cryptosignalbot-scheduler
+    restart: unless-stopped
+    depends_on:
+      - dashboard
+    env_file:
+      - .env
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      DATABASE_CONNECTION_STRING: Data Source=/app/data/cryptosignalbot.db
+      CRYPTO_SIGNAL_BOT_LOG_DIR: /app/logs
+      SCHEDULE_ANALYZE_SECONDS: 900
+      SCHEDULE_REPORT_SECONDS: 21600
+      SCHEDULE_CLEANUP_SECONDS: 86400
+    volumes:
+      - cryptosignalbot-data:/app/data
+      - cryptosignalbot-logs:/app/logs
+    entrypoint: ["/bin/bash", "/app/scripts/run-scheduler.sh"]
+
+volumes:
+  cryptosignalbot-data:
+  cryptosignalbot-logs:
