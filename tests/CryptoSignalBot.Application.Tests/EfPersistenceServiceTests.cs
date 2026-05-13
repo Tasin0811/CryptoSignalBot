@@ -103,8 +103,13 @@ public sealed class EfPersistenceServiceTests
         Assert.Equal(PaperTradeOutcome.TakeProfit1, trade.Outcome);
         Assert.Equal(100m, trade.Invested);
         Assert.Equal(105m, trade.CurrentValue);
+        Assert.Equal(500m, trade.CashBefore);
+        Assert.Equal(505m, trade.CashAfter);
+        Assert.Equal(505m, report.Cash);
         Assert.Equal(505m, report.Equity);
         Assert.Equal(5m, report.ProfitLoss);
+        Assert.Equal(5m, report.RealizedProfitLoss);
+        Assert.Equal(100m, report.TotalInvested);
         Assert.Equal(1m, trade.Units);
     }
 

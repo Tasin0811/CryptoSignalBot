@@ -177,6 +177,10 @@ app.MapGet("/api/paper/portfolio", async (
         report.Equity,
         report.ProfitLoss,
         report.ProfitLossPercent,
+        report.FirstTradeAt,
+        report.LastTradeAt,
+        report.TotalInvested,
+        report.RealizedProfitLoss,
         report.ClosedCount,
         report.OpenCount,
         report.Wins,
@@ -312,6 +316,8 @@ static object ToPaperPortfolioTradeDto(PaperPortfolioTrade trade)
         trade.EntryPrice,
         trade.Units,
         trade.Invested,
+        trade.CashBefore,
+        trade.CashAfter,
         trade.ExitTime,
         trade.ExitPrice,
         trade.CurrentPrice,
@@ -480,9 +486,14 @@ internal static class DashboardPage
         <h2>Portfolio test</h2>
         <div class="cards">
           <div class="metric"><span class="status">Budget iniziale</span><strong id="portfolioBudget">0</strong></div>
+          <div class="metric"><span class="status">Cash disponibile</span><strong id="portfolioCash">0</strong></div>
+          <div class="metric"><span class="status">Valore posizioni</span><strong id="portfolioOpenValue">0</strong></div>
           <div class="metric"><span class="status">Equity simulata</span><strong id="portfolioEquity">0</strong></div>
           <div class="metric"><span class="status">Guadagno/perdita</span><strong id="portfolioPnl">0</strong></div>
+          <div class="metric"><span class="status">P/L realizzato</span><strong id="portfolioRealizedPnl">0</strong></div>
+          <div class="metric"><span class="status">Trade chiusi / aperti</span><strong id="portfolioClosedOpen">0 / 0</strong></div>
           <div class="metric"><span class="status">Win rate</span><strong id="portfolioWinRate">0%</strong></div>
+          <div class="metric"><span class="status">Periodo replay</span><strong id="portfolioPeriod">-</strong></div>
         </div>
         <div id="portfolioTrades"></div>
       </section>
@@ -662,10 +673,18 @@ internal static class DashboardPage
       }
       const data = await response.json();
       portfolioBudget.textContent = money(data.initialBudget);
+      portfolioCash.textContent = money(data.cash);
+      portfolioOpenValue.textContent = money(data.openPositionValue);
       portfolioEquity.textContent = money(data.equity);
       portfolioPnl.textContent = `${money(data.profitLoss)} (${data.profitLossPercent ?? 0}%)`;
       portfolioPnl.className = Number(data.profitLoss) >= 0 ? "ok" : "bad";
+      portfolioRealizedPnl.textContent = money(data.realizedProfitLoss);
+      portfolioRealizedPnl.className = Number(data.realizedProfitLoss) >= 0 ? "ok" : "bad";
+      portfolioClosedOpen.textContent = `${data.closedCount ?? 0} / ${data.openCount ?? 0}`;
       portfolioWinRate.textContent = `${data.winRate ?? 0}%`;
+      portfolioPeriod.textContent = data.firstTradeAt
+        ? `${new Date(data.firstTradeAt).toLocaleDateString()} - ${new Date(data.lastTradeAt).toLocaleDateString()}`
+        : "-";
       renderPortfolioTrades(data.trades || []);
     }
 
@@ -679,10 +698,11 @@ internal static class DashboardPage
           <td><strong>${escapeHtml(trade.symbol)}</strong><br>${escapeHtml(trade.timeframe)}</td>
           <td><span class="pill">${escapeHtml(trade.outcome)}</span><br><span class="status">${new Date(trade.entryTime).toLocaleString()}</span></td>
           <td>${money(trade.invested)}<br><span class="status">${money(trade.units)} units</span></td>
+          <td>${money(trade.cashBefore)}<br><span class="status">dopo ${money(trade.cashAfter)}</span></td>
           <td>${money(trade.entryPrice)}<br><span class="status">exit ${money(trade.exitPrice ?? trade.currentPrice)}</span></td>
           <td class="${Number(trade.profitLoss) >= 0 ? "score" : "warn"}">${money(trade.profitLoss)} (${trade.profitLossPercent}%)</td>
         </tr>`).join("");
-      portfolioTrades.innerHTML = `<table><thead><tr><th>Asset</th><th>Stato</th><th>Investito</th><th>Prezzi</th><th>P/L</th></tr></thead><tbody>${rows}</tbody></table>`;
+      portfolioTrades.innerHTML = `<table><thead><tr><th>Asset</th><th>Stato</th><th>Investito</th><th>Cash wallet</th><th>Prezzi</th><th>P/L</th></tr></thead><tbody>${rows}</tbody></table>`;
     }
 
     function renderTasks(items) {

@@ -217,10 +217,9 @@ public sealed class EfPersistenceService(CryptoSignalBotDbContext dbContext, IOp
                 continue;
             }
 
-            cash -= trade.Invested;
+            cash = trade.CashAfter;
             if (trade.IsClosed)
             {
-                cash += trade.CurrentValue;
                 availableAt = trade.ExitTime ?? signal.CreatedAt;
             }
             else
@@ -394,6 +393,8 @@ public sealed class EfPersistenceService(CryptoSignalBotDbContext dbContext, IOp
         }
 
         var invested = units * signal.Price;
+        var cashBefore = cash;
+        var cashAfterEntry = cashBefore - invested;
         PaperTradeOutcome outcome;
         DateTime? exitTime = null;
         decimal? exitPrice = null;
@@ -408,7 +409,7 @@ public sealed class EfPersistenceService(CryptoSignalBotDbContext dbContext, IOp
                 exitTime = candle.OpenTime;
                 exitPrice = signal.StopLoss.Value;
                 currentPrice = exitPrice.Value;
-                return CreatePortfolioTrade(signal, units, invested, exitTime, exitPrice, currentPrice, outcome);
+                return CreatePortfolioTrade(signal, units, invested, cashBefore, cashAfterEntry + (units * currentPrice), exitTime, exitPrice, currentPrice, outcome);
             }
 
             if (candle.HighPrice >= signal.TakeProfit1.Value)
@@ -417,13 +418,13 @@ public sealed class EfPersistenceService(CryptoSignalBotDbContext dbContext, IOp
                 exitTime = candle.OpenTime;
                 exitPrice = signal.TakeProfit1.Value;
                 currentPrice = exitPrice.Value;
-                return CreatePortfolioTrade(signal, units, invested, exitTime, exitPrice, currentPrice, outcome);
+                return CreatePortfolioTrade(signal, units, invested, cashBefore, cashAfterEntry + (units * currentPrice), exitTime, exitPrice, currentPrice, outcome);
             }
         }
 
         if (futureCandles.Count == 0)
         {
-            return CreatePortfolioTrade(signal, units, invested, null, null, currentPrice, PaperTradeOutcome.Open);
+            return CreatePortfolioTrade(signal, units, invested, cashBefore, cashAfterEntry, null, null, currentPrice, PaperTradeOutcome.Open);
         }
 
         var lastCandle = futureCandles[^1];
@@ -431,6 +432,8 @@ public sealed class EfPersistenceService(CryptoSignalBotDbContext dbContext, IOp
             signal,
             units,
             invested,
+            cashBefore,
+            cashAfterEntry + (units * lastCandle.ClosePrice),
             lastCandle.OpenTime,
             lastCandle.ClosePrice,
             lastCandle.ClosePrice,
@@ -441,6 +444,8 @@ public sealed class EfPersistenceService(CryptoSignalBotDbContext dbContext, IOp
         SignalEntity signal,
         decimal units,
         decimal invested,
+        decimal cashBefore,
+        decimal cashAfter,
         DateTime? exitTime,
         decimal? exitPrice,
         decimal currentPrice,
@@ -454,6 +459,8 @@ public sealed class EfPersistenceService(CryptoSignalBotDbContext dbContext, IOp
             signal.Price,
             units,
             invested,
+            cashBefore,
+            cashAfter,
             exitTime,
             exitPrice,
             currentPrice,

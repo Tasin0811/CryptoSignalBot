@@ -10,6 +10,10 @@ public sealed record PaperPortfolioReport(
     public decimal Equity => Cash + OpenPositionValue;
     public decimal ProfitLoss => Equity - InitialBudget;
     public decimal ProfitLossPercent => InitialBudget <= 0m ? 0m : decimal.Round(ProfitLoss / InitialBudget * 100m, 2);
+    public DateTime? FirstTradeAt => Trades.Count == 0 ? null : Trades.Min(trade => trade.EntryTime);
+    public DateTime? LastTradeAt => Trades.Count == 0 ? null : Trades.Max(trade => trade.ExitTime ?? trade.EntryTime);
+    public decimal TotalInvested => Trades.Sum(trade => trade.Invested);
+    public decimal RealizedProfitLoss => Trades.Where(trade => trade.IsClosed).Sum(trade => trade.ProfitLoss);
     public int ClosedCount => Trades.Count(trade => trade.IsClosed);
     public int OpenCount => Trades.Count(trade => !trade.IsClosed);
     public int Wins => Trades.Count(trade => trade.IsClosed && trade.ProfitLoss > 0m);
@@ -25,6 +29,8 @@ public sealed record PaperPortfolioTrade(
     decimal EntryPrice,
     decimal Units,
     decimal Invested,
+    decimal CashBefore,
+    decimal CashAfter,
     DateTime? ExitTime,
     decimal? ExitPrice,
     decimal CurrentPrice,
