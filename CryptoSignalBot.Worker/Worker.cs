@@ -133,12 +133,19 @@ public class Worker : BackgroundService
 
         var analyzed = 0;
         var notified = 0;
+        var globalMarketData = await LoadGlobalMarketDataForRunAsync(cancellationToken);
 
         foreach (var timeframe in timeframes)
         {
             foreach (var symbol in symbols)
             {
-                var signal = await AnalyzeSingleAsync(symbol, timeframe, sendNotification: sendIndividualAlerts, cancellationToken);
+                var signal = await AnalyzeSingleAsync(
+                    symbol,
+                    timeframe,
+                    sendNotification: sendIndividualAlerts,
+                    cancellationToken,
+                    globalMarketData,
+                    useProvidedGlobalMarketData: true);
                 if (signal is null)
                 {
                     continue;
@@ -170,6 +177,8 @@ public class Worker : BackgroundService
 
         using var reportScope = _scopeFactory.CreateScope();
         var persistenceService = reportScope.ServiceProvider.GetRequiredService<IPersistenceService>();
+        var globalMarketDataService = reportScope.ServiceProvider.GetService<IGlobalMarketDataService>();
+        var globalMarketData = await GetGlobalMarketDataAsync(globalMarketDataService, cancellationToken);
         var dedupeWindow = TimeSpan.FromMinutes(Math.Max(0, _botSettings.Value.DeduplicateReportMinutes));
         var recentSignals = forceReport || dedupeWindow == TimeSpan.Zero
             ? []
@@ -183,7 +192,13 @@ public class Worker : BackgroundService
         {
             foreach (var symbol in symbols)
             {
-                var signal = await AnalyzeSingleAsync(symbol, timeframe, sendNotification: false, cancellationToken);
+                var signal = await AnalyzeSingleAsync(
+                    symbol,
+                    timeframe,
+                    sendNotification: false,
+                    cancellationToken,
+                    globalMarketData,
+                    useProvidedGlobalMarketData: true);
                 if (signal is not null)
                 {
                     signals.Add(signal);
@@ -225,7 +240,9 @@ public class Worker : BackgroundService
         string symbol,
         string timeframe,
         bool sendNotification,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        GlobalMarketData? globalMarketData = null,
+        bool useProvidedGlobalMarketData = false)
     {
         using var scope = _scopeFactory.CreateScope();
         var marketData = scope.ServiceProvider.GetRequiredService<IMarketDataService>();
@@ -251,7 +268,9 @@ public class Worker : BackgroundService
             : await marketData.GetCandlesAsync("BTCUSDT", timeframe, 250, cancellationToken);
 
         var indicators = indicatorEngine.Calculate(candles);
-        var globalMarketData = await GetGlobalMarketDataAsync(globalMarketDataService, cancellationToken);
+        globalMarketData = useProvidedGlobalMarketData
+            ? globalMarketData
+            : await GetGlobalMarketDataAsync(globalMarketDataService, cancellationToken);
         var marketContext = marketContextEngine.Evaluate(btcCandles, candles, globalMarketData);
         var latest = candles.OrderBy(candle => candle.OpenTime).Last();
         var atr = indicators.Atr14 ?? latest.ClosePrice * 0.02m;
@@ -295,6 +314,13 @@ public class Worker : BackgroundService
         }
 
         return signal;
+    }
+
+    private async Task<GlobalMarketData?> LoadGlobalMarketDataForRunAsync(CancellationToken cancellationToken)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var globalMarketDataService = scope.ServiceProvider.GetService<IGlobalMarketDataService>();
+        return await GetGlobalMarketDataAsync(globalMarketDataService, cancellationToken);
     }
 
     private async Task<GlobalMarketData?> GetGlobalMarketDataAsync(
