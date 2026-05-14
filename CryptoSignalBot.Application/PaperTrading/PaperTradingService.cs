@@ -20,19 +20,27 @@ public sealed class PaperTradingService : IPaperTradingService
             .Take(maxCandles)
             .ToArray();
 
+        var tp1Hit = false;
         foreach (var candle in ordered)
         {
-            var hitStop = candle.LowPrice <= signal.StopLoss.Value;
-            var hitTp1 = candle.HighPrice >= signal.TakeProfit1.Value;
-
-            if (hitStop)
+            if (!tp1Hit && candle.LowPrice <= signal.StopLoss.Value)
             {
                 return Create(signal, PaperTradeOutcome.StopLoss, candle.OpenTime, signal.StopLoss.Value);
             }
 
-            if (hitTp1)
+            if (!tp1Hit && candle.HighPrice >= signal.TakeProfit1.Value)
             {
-                return Create(signal, PaperTradeOutcome.TakeProfit1, candle.OpenTime, signal.TakeProfit1.Value);
+                tp1Hit = true;
+            }
+
+            if (tp1Hit && candle.LowPrice <= signal.Price)
+            {
+                return Create(signal, PaperTradeOutcome.TakeProfit1, candle.OpenTime, signal.Price);
+            }
+
+            if (tp1Hit && signal.TakeProfit2.HasValue && candle.HighPrice >= signal.TakeProfit2.Value)
+            {
+                return Create(signal, PaperTradeOutcome.TakeProfit2, candle.OpenTime, signal.TakeProfit2.Value);
             }
         }
 

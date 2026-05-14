@@ -24,6 +24,7 @@ public sealed class SignalEngine : ISignalEngine
         AddSupportResistanceRules(price, indicators, rules);
         AddMarketContextRules(marketContext, rules);
         AddRiskRules(riskPlan, rules);
+        AddEntryQualityRules(indicators, marketContext, riskPlan, rules);
 
         var rawScore = rules.Sum(rule => rule.ScoreImpact);
         var normalizedScore = Math.Clamp(5m + rawScore, 0m, 10m);
@@ -129,7 +130,11 @@ public sealed class SignalEngine : ISignalEngine
         }
         else if (nearResistance)
         {
-            rules.Add(new RuleResult("Support/resistance", -1m, RuleResultType.Warning, $"Price is near recent resistance. {details}"));
+            var impact = indicators.VolumeRatio >= 1.5m ? -0.5m : -1.5m;
+            var message = indicators.VolumeRatio >= 1.5m
+                ? "Price is near resistance, but volume is strong enough for a breakout watch."
+                : "Price is near resistance without breakout-quality volume.";
+            rules.Add(new RuleResult("Support/resistance", impact, RuleResultType.Warning, $"{message} {details}"));
         }
         else
         {
@@ -168,6 +173,57 @@ public sealed class SignalEngine : ISignalEngine
         }
     }
 
+    private static void AddEntryQualityRules(
+        IndicatorSnapshot indicators,
+        MarketContext marketContext,
+        RiskPlan riskPlan,
+        ICollection<RuleResult> rules)
+    {
+        var issues = new List<string>();
+        if (indicators.VolumeRatio < 0.8m)
+        {
+            issues.Add("volume below minimum confirmation");
+        }
+
+        if (indicators.Rsi14 > 65m)
+        {
+            issues.Add("RSI is too hot for a clean beginner entry");
+        }
+
+        if (indicators.Adx14.HasValue && indicators.Adx14 < 20m)
+        {
+            issues.Add("trend strength is weak");
+        }
+
+        if (marketContext.ScoreImpact < 0m)
+        {
+            issues.Add("market context is not supportive");
+        }
+
+        if (riskPlan.RiskReward1 < 1.5m || riskPlan.RiskReward2 < 2m)
+        {
+            issues.Add("risk/reward is not strong enough");
+        }
+
+        var resistanceWarning = rules.Any(rule =>
+            string.Equals(rule.RuleName, "Support/resistance", StringComparison.OrdinalIgnoreCase) &&
+            rule.Result == RuleResultType.Warning &&
+            indicators.VolumeRatio < 1.5m);
+        if (resistanceWarning)
+        {
+            issues.Add("resistance is too close without strong breakout volume");
+        }
+
+        if (issues.Count == 0)
+        {
+            rules.Add(new RuleResult("Entry quality gate", 0.5m, RuleResultType.Pass, "Entry quality checks passed."));
+            return;
+        }
+
+        var impact = issues.Count >= 2 ? -2m : -1m;
+        rules.Add(new RuleResult("Entry quality gate", impact, RuleResultType.Warning, string.Join("; ", issues) + "."));
+    }
+
     private static SignalType ToSignalType(decimal score, IReadOnlyCollection<RuleResult> rules)
     {
         if (rules.Any(rule => rule.Result == RuleResultType.Blocked))
@@ -175,7 +231,11 @@ public sealed class SignalEngine : ISignalEngine
             return SignalType.Avoid;
         }
 
-        return score switch
+        var entryQualityIssue = rules.FirstOrDefault(rule =>
+            string.Equals(rule.RuleName, "Entry quality gate", StringComparison.OrdinalIgnoreCase) &&
+            rule.Result == RuleResultType.Warning);
+
+        var signalType = score switch
         {
             < 4m => SignalType.Avoid,
             < 6m => SignalType.Wait,
@@ -183,6 +243,20 @@ public sealed class SignalEngine : ISignalEngine
             < 8.5m => SignalType.BuyWatch,
             _ => SignalType.HighQualitySetup
         };
+
+        if (entryQualityIssue is null)
+        {
+            return signalType;
+        }
+
+        if (entryQualityIssue.ScoreImpact <= -2m && signalType >= SignalType.BuyWatch)
+        {
+            return SignalType.Watch;
+        }
+
+        return signalType == SignalType.HighQualitySetup
+            ? SignalType.BuyWatch
+            : signalType;
     }
 
     private static string BuildSummary(SignalType signalType, IReadOnlyCollection<RuleResult> rules)

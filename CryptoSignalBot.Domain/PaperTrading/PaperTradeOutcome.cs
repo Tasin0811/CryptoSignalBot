@@ -6,5 +6,6 @@ public enum PaperTradeOutcome
     TakeProfit1 = 1,
     StopLoss = 2,
     Expired = 3,
-    Invalid = 4
+    Invalid = 4,
+    TakeProfit2 = 5
 }

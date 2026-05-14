@@ -181,6 +181,12 @@ app.MapGet("/api/paper/portfolio", async (
         report.LastTradeAt,
         report.TotalInvested,
         report.RealizedProfitLoss,
+        report.UnrealizedProfitLoss,
+        report.TotalFees,
+        report.CapitalAtWorkPercent,
+        report.AverageInvested,
+        report.BestTradeProfitLoss,
+        report.WorstTradeProfitLoss,
         report.ClosedCount,
         report.OpenCount,
         report.Wins,
@@ -318,9 +324,15 @@ static object ToPaperPortfolioTradeDto(PaperPortfolioTrade trade)
         trade.Invested,
         trade.CashBefore,
         trade.CashAfter,
+        trade.RemainingUnits,
+        trade.EntryFee,
+        trade.ExitFee,
+        trade.TotalFees,
+        trade.SlippageCost,
         trade.ExitTime,
         trade.ExitPrice,
         trade.CurrentPrice,
+        trade.BreakEvenStop,
         Outcome = trade.Outcome.ToString(),
         trade.IsClosed,
         trade.CurrentValue,
@@ -360,7 +372,10 @@ static async Task UpdateBotSettingsAsync(
         ["DryRunOnly"] = settings.DryRunOnly,
         ["AccountBalance"] = settings.AccountBalance,
         ["RiskPercent"] = settings.RiskPercent,
-        ["PaperPortfolioInitialBudget"] = settings.PaperPortfolioInitialBudget
+        ["PaperPortfolioInitialBudget"] = settings.PaperPortfolioInitialBudget,
+        ["PaperTradingFeePercent"] = settings.PaperTradingFeePercent,
+        ["PaperTradingSlippagePercent"] = settings.PaperTradingSlippagePercent,
+        ["PaperTradingTakeProfit1ExitPercent"] = settings.PaperTradingTakeProfit1ExitPercent
     };
 
     var json = rootObject.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
@@ -408,6 +423,11 @@ internal static class DashboardPage
     .metric strong { display:block; font-size:22px; line-height:1.2; margin-top:4px; }
     .metric .bad { color:var(--bad); }
     .metric .ok { color:var(--accent); }
+    details.legend { border:1px solid var(--line); border-radius:8px; padding:12px; margin:0 0 16px; background:#fbfcfd; }
+    details.legend summary { cursor:pointer; font-weight:700; }
+    .legend-grid { display:grid; grid-template-columns:repeat(2, minmax(220px, 1fr)); gap:10px 18px; margin-top:12px; font-size:13px; }
+    .legend-grid div { color:var(--muted); }
+    .legend-grid strong { display:block; color:var(--ink); margin-bottom:2px; }
     table { width:100%; border-collapse:collapse; font-size:13px; }
     th, td { padding:10px 8px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
     th { color:var(--muted); font-weight:600; }
@@ -447,9 +467,12 @@ internal static class DashboardPage
         <div><label>Dedupe segnali minuti</label><input id="dedupeSignal" type="number" min="0"></div>
         <div><label>Retain candele giorni</label><input id="retainCandles" type="number" min="1"></div>
         <div><label>Retain segnali giorni</label><input id="retainSignals" type="number" min="1"></div>
-        <div><label>Balance teorico</label><input id="accountBalance" type="number" min="0" step="0.01"></div>
+        <div><label>Capitale teorico</label><input id="accountBalance" type="number" min="0" step="0.01"></div>
         <div><label>Rischio per trade</label><input id="riskPercent" type="number" min="0" max="0.2" step="0.001"></div>
         <div><label>Budget test portfolio</label><input id="paperPortfolioInitialBudget" type="number" min="10" step="10"></div>
+        <div><label>Fee paper per lato</label><input id="paperTradingFeePercent" type="number" min="0" max="0.05" step="0.0001"></div>
+        <div><label>Slippage paper</label><input id="paperTradingSlippagePercent" type="number" min="0" max="0.05" step="0.0001"></div>
+        <div><label>Quota venduta a TP1</label><input id="paperTradingTakeProfit1ExitPercent" type="number" min="0.1" max="0.9" step="0.05"></div>
       </div>
       <label><input id="dryRunOnly" type="checkbox"> Dry run only</label>
       <p class="status" id="saveStatus">Le password restano fuori da questa schermata.</p>
@@ -484,6 +507,26 @@ internal static class DashboardPage
         </div>
         <div id="paperTrades"></div>
         <h2>Portfolio test</h2>
+        <details class="legend" open>
+          <summary>Legenda semplice</summary>
+          <div class="legend-grid">
+            <div><strong>Budget iniziale</strong>Capitale finto da cui parte la simulazione. Non sono soldi reali.</div>
+            <div><strong>Cash disponibile</strong>Soldi finti rimasti liberi dopo gli acquisti simulati.</div>
+            <div><strong>Valore posizioni</strong>Valore attuale delle posizioni ancora aperte.</div>
+            <div><strong>Equity simulata</strong>Cash disponibile + valore posizioni aperte. E' il valore totale del wallet finto.</div>
+            <div><strong>Guadagno/perdita</strong>Differenza tra equity simulata e budget iniziale.</div>
+            <div><strong>P/L realizzato</strong>Profitto o perdita dei trade gia' chiusi. Le posizioni aperte non sono incluse.</div>
+            <div><strong>Win rate</strong>Percentuale dei trade chiusi in profitto. Con pochi trade puo' essere ingannevole.</div>
+            <div><strong>Open</strong>Trade ancora aperto: non ha ancora preso stop loss, take profit o scadenza.</div>
+            <div><strong>Take profit</strong>Uscita in guadagno perche' il prezzo ha raggiunto il primo obiettivo.</div>
+            <div><strong>TP1 / TP2</strong>TP1 vende una parte della posizione. TP2 chiude il resto se il movimento continua.</div>
+            <div><strong>Stop loss</strong>Uscita in perdita controllata perche' il prezzo ha rotto il livello di invalidazione.</div>
+            <div><strong>Break-even</strong>Dopo TP1 lo stop del resto viene spostato vicino al prezzo di ingresso, per proteggere il trade.</div>
+            <div><strong>Fee e slippage</strong>Costi simulati: commissioni e piccolo peggioramento del prezzo di ingresso/uscita.</div>
+            <div><strong>Chiuso a scadenza</strong>Il trade non ha preso ne' target ne' stop entro la finestra testata, quindi viene chiuso all'ultima candela disponibile.</div>
+            <div><strong>Cash wallet</strong>Saldo prima del trade e saldo dopo quel trade. Serve a vedere che il budget non riparte da capo.</div>
+          </div>
+        </details>
         <div class="cards">
           <div class="metric"><span class="status">Budget iniziale</span><strong id="portfolioBudget">0</strong></div>
           <div class="metric"><span class="status">Cash disponibile</span><strong id="portfolioCash">0</strong></div>
@@ -491,9 +534,13 @@ internal static class DashboardPage
           <div class="metric"><span class="status">Equity simulata</span><strong id="portfolioEquity">0</strong></div>
           <div class="metric"><span class="status">Guadagno/perdita</span><strong id="portfolioPnl">0</strong></div>
           <div class="metric"><span class="status">P/L realizzato</span><strong id="portfolioRealizedPnl">0</strong></div>
+          <div class="metric"><span class="status">P/L aperto</span><strong id="portfolioUnrealizedPnl">0</strong></div>
+          <div class="metric"><span class="status">Costi simulati</span><strong id="portfolioFees">0</strong></div>
+          <div class="metric"><span class="status">Capitale impegnato</span><strong id="portfolioCapitalAtWork">0%</strong></div>
           <div class="metric"><span class="status">Trade chiusi / aperti</span><strong id="portfolioClosedOpen">0 / 0</strong></div>
           <div class="metric"><span class="status">Win rate</span><strong id="portfolioWinRate">0%</strong></div>
           <div class="metric"><span class="status">Periodo replay</span><strong id="portfolioPeriod">-</strong></div>
+          <div class="metric"><span class="status">Miglior / peggior trade</span><strong id="portfolioBestWorst">0 / 0</strong></div>
         </div>
         <div id="portfolioTrades"></div>
       </section>
@@ -513,6 +560,14 @@ internal static class DashboardPage
     const joinList = value => (value || []).join(", ");
     const text = value => value === null || value === undefined || value === "" ? "-" : String(value);
     const money = value => value === null || value === undefined ? "-" : Number(value).toLocaleString(undefined, { maximumFractionDigits: 8 });
+    const outcomeLabel = value => ({
+      TakeProfit1: "Take profit",
+      TakeProfit2: "Take profit 2",
+      StopLoss: "Stop loss",
+      Expired: "Chiuso a scadenza",
+      Open: "Open",
+      Invalid: "Non valido"
+    })[value] || value;
     const escapeHtml = value => text(value)
       .replaceAll("&", "&amp;")
       .replaceAll("<", "&lt;")
@@ -582,6 +637,9 @@ internal static class DashboardPage
       accountBalance.value = settings.accountBalance;
       riskPercent.value = settings.riskPercent;
       paperPortfolioInitialBudget.value = settings.paperPortfolioInitialBudget;
+      paperTradingFeePercent.value = settings.paperTradingFeePercent;
+      paperTradingSlippagePercent.value = settings.paperTradingSlippagePercent;
+      paperTradingTakeProfit1ExitPercent.value = settings.paperTradingTakeProfit1ExitPercent;
       dryRunOnly.checked = settings.dryRunOnly;
     }
 
@@ -599,7 +657,10 @@ internal static class DashboardPage
         dryRunOnly: dryRunOnly.checked,
         accountBalance: Number(accountBalance.value),
         riskPercent: Number(riskPercent.value),
-        paperPortfolioInitialBudget: Number(paperPortfolioInitialBudget.value)
+        paperPortfolioInitialBudget: Number(paperPortfolioInitialBudget.value),
+        paperTradingFeePercent: Number(paperTradingFeePercent.value),
+        paperTradingSlippagePercent: Number(paperTradingSlippagePercent.value),
+        paperTradingTakeProfit1ExitPercent: Number(paperTradingTakeProfit1ExitPercent.value)
       };
       saveStatus.textContent = "Salvataggio...";
       const response = await fetch("/api/settings/bot", {
@@ -658,7 +719,7 @@ internal static class DashboardPage
       const rows = trades.map(trade => `
         <tr>
           <td><strong>${escapeHtml(trade.symbol)}</strong><br>${escapeHtml(trade.timeframe)}</td>
-          <td><span class="pill">${escapeHtml(trade.outcome)}</span><br><span class="status">${trade.exitTime ? new Date(trade.exitTime).toLocaleString() : "-"}</span></td>
+          <td><span class="pill">${escapeHtml(outcomeLabel(trade.outcome))}</span><br><span class="status">${trade.exitTime ? new Date(trade.exitTime).toLocaleString() : "-"}</span></td>
           <td>${money(trade.entryPrice)}<br><span class="status">exit ${money(trade.exitPrice)}</span></td>
           <td class="${Number(trade.returnPercent) >= 0 ? "score" : "warn"}">${escapeHtml(trade.returnPercent)}%</td>
         </tr>`).join("");
@@ -680,11 +741,16 @@ internal static class DashboardPage
       portfolioPnl.className = Number(data.profitLoss) >= 0 ? "ok" : "bad";
       portfolioRealizedPnl.textContent = money(data.realizedProfitLoss);
       portfolioRealizedPnl.className = Number(data.realizedProfitLoss) >= 0 ? "ok" : "bad";
+      portfolioUnrealizedPnl.textContent = money(data.unrealizedProfitLoss);
+      portfolioUnrealizedPnl.className = Number(data.unrealizedProfitLoss) >= 0 ? "ok" : "bad";
+      portfolioFees.textContent = money(data.totalFees);
+      portfolioCapitalAtWork.textContent = `${data.capitalAtWorkPercent ?? 0}%`;
       portfolioClosedOpen.textContent = `${data.closedCount ?? 0} / ${data.openCount ?? 0}`;
       portfolioWinRate.textContent = `${data.winRate ?? 0}%`;
       portfolioPeriod.textContent = data.firstTradeAt
         ? `${new Date(data.firstTradeAt).toLocaleDateString()} - ${new Date(data.lastTradeAt).toLocaleDateString()}`
         : "-";
+      portfolioBestWorst.textContent = `${money(data.bestTradeProfitLoss)} / ${money(data.worstTradeProfitLoss)}`;
       renderPortfolioTrades(data.trades || []);
     }
 
@@ -696,11 +762,11 @@ internal static class DashboardPage
       const rows = trades.map(trade => `
         <tr>
           <td><strong>${escapeHtml(trade.symbol)}</strong><br>${escapeHtml(trade.timeframe)}</td>
-          <td><span class="pill">${escapeHtml(trade.outcome)}</span><br><span class="status">${new Date(trade.entryTime).toLocaleString()}</span></td>
-          <td>${money(trade.invested)}<br><span class="status">${money(trade.units)} units</span></td>
+          <td><span class="pill">${escapeHtml(outcomeLabel(trade.outcome))}</span><br><span class="status">${new Date(trade.entryTime).toLocaleString()}</span></td>
+          <td>${money(trade.invested)}<br><span class="status">${money(trade.remainingUnits)} / ${money(trade.units)} units</span></td>
           <td>${money(trade.cashBefore)}<br><span class="status">dopo ${money(trade.cashAfter)}</span></td>
           <td>${money(trade.entryPrice)}<br><span class="status">exit ${money(trade.exitPrice ?? trade.currentPrice)}</span></td>
-          <td class="${Number(trade.profitLoss) >= 0 ? "score" : "warn"}">${money(trade.profitLoss)} (${trade.profitLossPercent}%)</td>
+          <td class="${Number(trade.profitLoss) >= 0 ? "score" : "warn"}">${money(trade.profitLoss)} (${trade.profitLossPercent}%)<br><span class="status">fee ${money(trade.totalFees)}</span></td>
         </tr>`).join("");
       portfolioTrades.innerHTML = `<table><thead><tr><th>Asset</th><th>Stato</th><th>Investito</th><th>Cash wallet</th><th>Prezzi</th><th>P/L</th></tr></thead><tbody>${rows}</tbody></table>`;
     }

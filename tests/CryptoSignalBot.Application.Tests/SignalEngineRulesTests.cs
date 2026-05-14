@@ -97,9 +97,9 @@ public sealed class SignalEngineRulesTests
             ValidRisk());
 
         var rule = Assert.Single(signal.RuleResults, rule => rule.RuleName == "Support/resistance");
-        Assert.Equal(-1m, rule.ScoreImpact);
+        Assert.Equal(-1.5m, rule.ScoreImpact);
         Assert.Equal(RuleResultType.Warning, rule.Result);
-        Assert.Contains("near recent resistance", rule.Details, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("near resistance", rule.Details, StringComparison.OrdinalIgnoreCase);
         Assert.True(signal.Score >= 6m);
     }
 

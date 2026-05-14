@@ -15,4 +15,7 @@ public sealed class BotSettings
     public decimal AccountBalance { get; init; } = 1000m;
     public decimal RiskPercent { get; init; } = 0.01m;
     public decimal PaperPortfolioInitialBudget { get; init; } = 500m;
+    public decimal PaperTradingFeePercent { get; init; } = 0.001m;
+    public decimal PaperTradingSlippagePercent { get; init; } = 0.001m;
+    public decimal PaperTradingTakeProfit1ExitPercent { get; init; } = 0.5m;
 }

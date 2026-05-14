@@ -15,7 +15,10 @@ public sealed record BotSettingsDto(
     bool DryRunOnly,
     decimal AccountBalance,
     decimal RiskPercent,
-    decimal PaperPortfolioInitialBudget)
+    decimal PaperPortfolioInitialBudget,
+    decimal PaperTradingFeePercent,
+    decimal PaperTradingSlippagePercent,
+    decimal PaperTradingTakeProfit1ExitPercent)
 {
     public static BotSettingsDto From(BotSettings settings)
     {
@@ -32,7 +35,10 @@ public sealed record BotSettingsDto(
             settings.DryRunOnly,
             settings.AccountBalance,
             settings.RiskPercent,
-            settings.PaperPortfolioInitialBudget);
+            settings.PaperPortfolioInitialBudget,
+            settings.PaperTradingFeePercent,
+            settings.PaperTradingSlippagePercent,
+            settings.PaperTradingTakeProfit1ExitPercent);
     }
 
     public BotSettingsDto Sanitize()
@@ -50,7 +56,10 @@ public sealed record BotSettingsDto(
             RetainSignalsDays = Math.Clamp(RetainSignalsDays, 1, 3650),
             AccountBalance = Math.Max(0m, AccountBalance),
             RiskPercent = Math.Clamp(RiskPercent, 0m, 0.20m),
-            PaperPortfolioInitialBudget = Math.Clamp(PaperPortfolioInitialBudget, 10m, 1_000_000m)
+            PaperPortfolioInitialBudget = Math.Clamp(PaperPortfolioInitialBudget, 10m, 1_000_000m),
+            PaperTradingFeePercent = Math.Clamp(PaperTradingFeePercent, 0m, 0.05m),
+            PaperTradingSlippagePercent = Math.Clamp(PaperTradingSlippagePercent, 0m, 0.05m),
+            PaperTradingTakeProfit1ExitPercent = Math.Clamp(PaperTradingTakeProfit1ExitPercent, 0.10m, 0.90m)
         };
     }
 

@@ -101,16 +101,41 @@ public sealed class EfPersistenceServiceTests
         var trade = Assert.Single(report.Trades);
         Assert.Equal(500m, report.InitialBudget);
         Assert.Equal(PaperTradeOutcome.TakeProfit1, trade.Outcome);
-        Assert.Equal(100m, trade.Invested);
-        Assert.Equal(105m, trade.CurrentValue);
+        Assert.True(trade.Invested < 100m);
+        Assert.Equal(0m, trade.CurrentValue);
         Assert.Equal(500m, trade.CashBefore);
-        Assert.Equal(505m, trade.CashAfter);
-        Assert.Equal(505m, report.Cash);
-        Assert.Equal(505m, report.Equity);
-        Assert.Equal(5m, report.ProfitLoss);
-        Assert.Equal(5m, report.RealizedProfitLoss);
-        Assert.Equal(100m, report.TotalInvested);
-        Assert.Equal(1m, trade.Units);
+        Assert.True(trade.CashAfter > 500m);
+        Assert.Equal(trade.CashAfter, report.Cash);
+        Assert.Equal(report.Cash, report.Equity);
+        Assert.True(report.ProfitLoss > 0m);
+        Assert.True(report.ProfitLoss < 5m);
+        Assert.Equal(report.ProfitLoss, report.RealizedProfitLoss);
+        Assert.True(report.TotalFees > 0m);
+        Assert.True(trade.SlippageCost > 0m);
+        Assert.True(trade.Units < 1m);
+    }
+
+    [Fact]
+    public async Task BuildPaperPortfolioReportAsync_SimulatesPartialTp1ThenTp2AfterCosts()
+    {
+        await using var database = await CreateDatabaseAsync();
+        var service = CreateService(database.Context);
+        var signalTime = new DateTimeOffset(2026, 5, 9, 12, 0, 0, TimeSpan.Zero);
+
+        await service.SaveSignalAsync(CreateSignal(createdAt: signalTime, price: 100m));
+        await service.SaveCandlesAsync(
+        [
+            new Candle("BTCUSDT", "1h", signalTime.UtcDateTime.AddHours(1), signalTime.UtcDateTime.AddHours(2).AddSeconds(-1), 100m, 106m, 101m, 105m, 1000m),
+            new Candle("BTCUSDT", "1h", signalTime.UtcDateTime.AddHours(2), signalTime.UtcDateTime.AddHours(3).AddSeconds(-1), 105m, 111m, 104m, 110m, 1000m)
+        ]);
+
+        var report = await service.BuildPaperPortfolioReportAsync(500m, maxSignals: 10, maxFutureCandles: 5);
+
+        var trade = Assert.Single(report.Trades);
+        Assert.Equal(PaperTradeOutcome.TakeProfit2, trade.Outcome);
+        Assert.Equal(0m, trade.RemainingUnits);
+        Assert.True(report.ProfitLoss > 0m);
+        Assert.True(report.TotalFees > 0m);
     }
 
     private static async Task<TestDatabase> CreateDatabaseAsync()

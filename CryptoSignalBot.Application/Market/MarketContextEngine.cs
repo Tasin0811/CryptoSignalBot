@@ -11,9 +11,11 @@ public sealed class MarketContextEngine : IMarketContextEngine
         IReadOnlyList<Candle> benchmarkCandles,
         GlobalMarketData? globalMarketData = null)
     {
-        var btcRiskOff = IsRiskOff(btcCandles);
+        var btcTrend = CalculateBtcTrend(btcCandles);
+        var btcRiskOff = IsHardRiskOff(btcTrend);
         var globalRiskOff = IsGlobalRiskOff(globalMarketData);
-        var benchmarkPositive = IsPositive(benchmarkCandles);
+        var btcContextPositive = IsPositiveBtcContext(btcTrend);
+        var btcSoftPenalty = GetBtcSoftPenalty(btcTrend);
         var globalScoreImpact = GetGlobalScoreImpact(globalMarketData);
 
         if (btcRiskOff || globalRiskOff)
@@ -25,39 +27,75 @@ public sealed class MarketContextEngine : IMarketContextEngine
             return new MarketContext(true, false, -3m, $"{reason}: avoid new altcoin entries. {BuildGlobalSummary(globalMarketData)}".Trim());
         }
 
-        var candleScoreImpact = benchmarkPositive ? 1m : 0m;
-        var scoreImpact = candleScoreImpact + globalScoreImpact;
-        var summary = benchmarkPositive
-            ? "Benchmark context is positive."
-            : "Market context is neutral.";
+        var btcScoreImpact = btcContextPositive ? 1m : 0m;
+        var scoreImpact = btcScoreImpact + btcSoftPenalty + globalScoreImpact;
+        var summary = btcContextPositive
+            ? "BTC trend context is supportive."
+            : "BTC trend context is neutral or soft.";
 
         return new MarketContext(
             false,
             scoreImpact > 0m,
-            scoreImpact,
-            $"{summary} {BuildGlobalSummary(globalMarketData)}".Trim());
+            Math.Clamp(scoreImpact, -2m, 2m),
+            $"{summary} {BuildBtcSummary(btcTrend)} {BuildGlobalSummary(globalMarketData)}".Trim());
     }
 
-    private static bool IsRiskOff(IReadOnlyList<Candle> candles)
+    private static BtcTrendState CalculateBtcTrend(IReadOnlyList<Candle> candles)
     {
-        if (candles.Count < 2)
+        if (candles.Count == 0)
+        {
+            return new BtcTrendState(null, null, null, null, null, false);
+        }
+
+        var closes = candles.Select(candle => candle.ClosePrice).ToArray();
+        var latest = closes[^1];
+        var oneCandleReturn = CalculateReturn(closes, 1);
+        var threeCandleReturn = CalculateReturn(closes, 3);
+        var ema50 = CalculateEma(closes, 50);
+        var ema200 = CalculateEma(closes, 200);
+        var emaBearish = latest > 0m && ema50.HasValue && ema200.HasValue && latest < ema200.Value && ema50.Value <= ema200.Value;
+
+        return new BtcTrendState(latest, oneCandleReturn, threeCandleReturn, ema50, ema200, emaBearish);
+    }
+
+    private static bool IsHardRiskOff(BtcTrendState trend)
+    {
+        return trend.EmaBearish ||
+               trend.OneCandleReturn <= -0.03m ||
+               trend.ThreeCandleReturn <= -0.04m;
+    }
+
+    private static bool IsPositiveBtcContext(BtcTrendState trend)
+    {
+        if (trend.LatestClose is not > 0m)
         {
             return false;
         }
 
-        var previous = candles[^2].ClosePrice;
-        var latest = candles[^1].ClosePrice;
-        return previous > 0 && (latest - previous) / previous <= -0.03m;
-    }
-
-    private static bool IsPositive(IReadOnlyList<Candle> candles)
-    {
-        if (candles.Count < 2)
+        if (trend.Ema50.HasValue && trend.Ema200.HasValue)
         {
-            return false;
+            return trend.LatestClose > trend.Ema50.Value &&
+                   trend.Ema50.Value > trend.Ema200.Value &&
+                   trend.ThreeCandleReturn >= 0m;
         }
 
-        return candles[^1].ClosePrice > candles[^2].ClosePrice;
+        return trend.OneCandleReturn > 0m;
+    }
+
+    private static decimal GetBtcSoftPenalty(BtcTrendState trend)
+    {
+        var penalty = 0m;
+        if (trend.LatestClose is > 0m && trend.Ema50.HasValue && trend.LatestClose < trend.Ema50.Value)
+        {
+            penalty -= 1m;
+        }
+
+        if (trend.ThreeCandleReturn is <= -0.02m and > -0.04m)
+        {
+            penalty -= 1m;
+        }
+
+        return penalty;
     }
 
     private static bool IsGlobalRiskOff(GlobalMarketData? globalMarketData)
@@ -85,6 +123,58 @@ public sealed class MarketContextEngine : IMarketContextEngine
         }
 
         return scoreImpact;
+    }
+
+    private static decimal? CalculateReturn(IReadOnlyList<decimal> closes, int periods)
+    {
+        if (closes.Count <= periods)
+        {
+            return null;
+        }
+
+        var previous = closes[^(periods + 1)];
+        var latest = closes[^1];
+        return previous > 0m ? (latest - previous) / previous : null;
+    }
+
+    private static decimal? CalculateEma(IReadOnlyList<decimal> values, int period)
+    {
+        if (values.Count < period)
+        {
+            return null;
+        }
+
+        var multiplier = 2m / (period + 1);
+        var ema = values.Take(period).Average();
+        for (var index = period; index < values.Count; index++)
+        {
+            ema = ((values[index] - ema) * multiplier) + ema;
+        }
+
+        return ema;
+    }
+
+    private static string BuildBtcSummary(BtcTrendState trend)
+    {
+        var parts = new List<string>();
+        if (trend.OneCandleReturn.HasValue)
+        {
+            parts.Add($"BTC last candle {FormatSignedPercentage(trend.OneCandleReturn.Value * 100m)}");
+        }
+
+        if (trend.ThreeCandleReturn.HasValue)
+        {
+            parts.Add($"BTC 3-candle {FormatSignedPercentage(trend.ThreeCandleReturn.Value * 100m)}");
+        }
+
+        if (trend.Ema50.HasValue && trend.Ema200.HasValue)
+        {
+            parts.Add(trend.EmaBearish ? "BTC below EMA200 with bearish EMA50/EMA200" : "BTC EMA trend usable");
+        }
+
+        return parts.Count == 0
+            ? "BTC trend context unavailable."
+            : string.Join(", ", parts) + ".";
     }
 
     private static string BuildGlobalSummary(GlobalMarketData? globalMarketData)
@@ -121,4 +211,12 @@ public sealed class MarketContextEngine : IMarketContextEngine
     {
         return string.Create(CultureInfo.InvariantCulture, $"{value:0.##}%");
     }
+
+    private sealed record BtcTrendState(
+        decimal? LatestClose,
+        decimal? OneCandleReturn,
+        decimal? ThreeCandleReturn,
+        decimal? Ema50,
+        decimal? Ema200,
+        bool EmaBearish);
 }

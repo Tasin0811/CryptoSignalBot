@@ -211,7 +211,7 @@ public sealed class EfPersistenceService(CryptoSignalBotDbContext dbContext, IOp
                 .Take(Math.Max(1, maxFutureCandles))
                 .ToListAsync(cancellationToken);
 
-            var trade = CreatePortfolioTrade(signal, futureCandles, cash, botSettings.Value.RiskPercent);
+            var trade = CreatePortfolioTrade(signal, futureCandles, cash, botSettings.Value);
             if (trade is null)
             {
                 continue;
@@ -353,16 +353,27 @@ public sealed class EfPersistenceService(CryptoSignalBotDbContext dbContext, IOp
             return CreatePaperResult(signal, PaperTradeOutcome.Invalid, null, null);
         }
 
+        var tp1Hit = false;
         foreach (var candle in futureCandles)
         {
-            if (candle.LowPrice <= signal.StopLoss.Value)
+            if (!tp1Hit && candle.LowPrice <= signal.StopLoss.Value)
             {
                 return CreatePaperResult(signal, PaperTradeOutcome.StopLoss, candle.OpenTime, signal.StopLoss.Value);
             }
 
-            if (candle.HighPrice >= signal.TakeProfit1.Value)
+            if (!tp1Hit && candle.HighPrice >= signal.TakeProfit1.Value)
             {
-                return CreatePaperResult(signal, PaperTradeOutcome.TakeProfit1, candle.OpenTime, signal.TakeProfit1.Value);
+                tp1Hit = true;
+            }
+
+            if (tp1Hit && candle.LowPrice <= signal.Price)
+            {
+                return CreatePaperResult(signal, PaperTradeOutcome.TakeProfit1, candle.OpenTime, signal.Price);
+            }
+
+            if (tp1Hit && signal.TakeProfit2.HasValue && candle.HighPrice >= signal.TakeProfit2.Value)
+            {
+                return CreatePaperResult(signal, PaperTradeOutcome.TakeProfit2, candle.OpenTime, signal.TakeProfit2.Value);
             }
         }
 
@@ -375,80 +386,151 @@ public sealed class EfPersistenceService(CryptoSignalBotDbContext dbContext, IOp
         SignalEntity signal,
         IReadOnlyList<MarketCandleEntity> futureCandles,
         decimal cash,
-        decimal riskPercent)
+        BotSettings settings)
     {
-        if (signal.Price <= 0m || signal.StopLoss is null || signal.TakeProfit1 is null || signal.StopLoss >= signal.Price)
+        if (signal.Price <= 0m ||
+            signal.StopLoss is null ||
+            signal.TakeProfit1 is null ||
+            signal.TakeProfit2 is null ||
+            signal.StopLoss >= signal.Price)
         {
             return null;
         }
 
-        var stopDistance = signal.Price - signal.StopLoss.Value;
-        var riskAmount = cash * Math.Clamp(riskPercent, 0.001m, 0.20m);
+        var feeRate = Math.Clamp(settings.PaperTradingFeePercent, 0m, 0.05m);
+        var slippageRate = Math.Clamp(settings.PaperTradingSlippagePercent, 0m, 0.05m);
+        var tp1ExitPercent = Math.Clamp(settings.PaperTradingTakeProfit1ExitPercent, 0.10m, 0.90m);
+        var entryPrice = ApplyBuySlippage(signal.Price, slippageRate);
+        var stopLossPrice = ApplySellSlippage(signal.StopLoss.Value, slippageRate);
+        var takeProfit1Price = ApplySellSlippage(signal.TakeProfit1.Value, slippageRate);
+        var takeProfit2Price = ApplySellSlippage(signal.TakeProfit2.Value, slippageRate);
+        var stopDistance = entryPrice - stopLossPrice;
+        if (stopDistance <= 0m)
+        {
+            return null;
+        }
+
+        var riskAmount = cash * Math.Clamp(settings.RiskPercent, 0.001m, 0.20m);
         var riskBasedUnits = riskAmount / stopDistance;
-        var cashBasedUnits = cash / signal.Price;
+        var cashBasedUnits = cash / (entryPrice * (1m + feeRate));
         var units = Math.Min(riskBasedUnits, cashBasedUnits);
         if (units <= 0m)
         {
             return null;
         }
 
-        var invested = units * signal.Price;
+        var invested = units * entryPrice;
         var cashBefore = cash;
+        var entryFee = CalculateFee(invested, feeRate);
         var cashAfterEntry = cashBefore - invested;
-        PaperTradeOutcome outcome;
+        cashAfterEntry -= entryFee;
+        var cashAfter = cashAfterEntry;
         DateTime? exitTime = null;
         decimal? exitPrice = null;
-        var currentPrice = signal.Price;
+        decimal? breakEvenStop = null;
+        var currentPrice = entryPrice;
+        var remainingUnits = units;
+        var exitFee = 0m;
+        var slippageCost = (entryPrice - signal.Price) * units;
+        var tp1Hit = false;
+        var lastOpenTime = signal.CreatedAt;
 
         foreach (var candle in futureCandles)
         {
             currentPrice = candle.ClosePrice;
-            if (candle.LowPrice <= signal.StopLoss.Value)
+            lastOpenTime = candle.OpenTime;
+
+            if (!tp1Hit && candle.LowPrice <= signal.StopLoss.Value)
             {
-                outcome = PaperTradeOutcome.StopLoss;
                 exitTime = candle.OpenTime;
-                exitPrice = signal.StopLoss.Value;
+                exitPrice = stopLossPrice;
                 currentPrice = exitPrice.Value;
-                return CreatePortfolioTrade(signal, units, invested, cashBefore, cashAfterEntry + (units * currentPrice), exitTime, exitPrice, currentPrice, outcome);
+                exitFee += CloseUnits(remainingUnits, currentPrice, feeRate, ref cashAfter);
+                slippageCost += (signal.StopLoss.Value - currentPrice) * remainingUnits;
+                remainingUnits = 0m;
+                return CreatePortfolioTrade(signal, entryPrice, units, invested, remainingUnits, cashBefore, cashAfter, entryFee, exitFee, slippageCost, exitTime, exitPrice, currentPrice, breakEvenStop, PaperTradeOutcome.StopLoss);
             }
 
-            if (candle.HighPrice >= signal.TakeProfit1.Value)
+            if (!tp1Hit && candle.HighPrice >= signal.TakeProfit1.Value)
             {
-                outcome = PaperTradeOutcome.TakeProfit1;
+                var tp1Units = remainingUnits * tp1ExitPercent;
+                exitFee += CloseUnits(tp1Units, takeProfit1Price, feeRate, ref cashAfter);
+                slippageCost += (signal.TakeProfit1.Value - takeProfit1Price) * tp1Units;
+                remainingUnits -= tp1Units;
+                tp1Hit = true;
+                breakEvenStop = ApplySellSlippage(entryPrice, slippageRate);
+                currentPrice = takeProfit1Price;
+            }
+
+            if (tp1Hit && candle.LowPrice <= entryPrice)
+            {
                 exitTime = candle.OpenTime;
-                exitPrice = signal.TakeProfit1.Value;
+                exitPrice = breakEvenStop.GetValueOrDefault(entryPrice);
                 currentPrice = exitPrice.Value;
-                return CreatePortfolioTrade(signal, units, invested, cashBefore, cashAfterEntry + (units * currentPrice), exitTime, exitPrice, currentPrice, outcome);
+                exitFee += CloseUnits(remainingUnits, currentPrice, feeRate, ref cashAfter);
+                slippageCost += (entryPrice - currentPrice) * remainingUnits;
+                remainingUnits = 0m;
+                return CreatePortfolioTrade(signal, entryPrice, units, invested, remainingUnits, cashBefore, cashAfter, entryFee, exitFee, slippageCost, exitTime, exitPrice, currentPrice, breakEvenStop, PaperTradeOutcome.TakeProfit1);
+            }
+
+            if (tp1Hit && candle.HighPrice >= signal.TakeProfit2.Value)
+            {
+                exitTime = candle.OpenTime;
+                exitPrice = takeProfit2Price;
+                currentPrice = exitPrice.Value;
+                exitFee += CloseUnits(remainingUnits, currentPrice, feeRate, ref cashAfter);
+                slippageCost += (signal.TakeProfit2.Value - currentPrice) * remainingUnits;
+                remainingUnits = 0m;
+                return CreatePortfolioTrade(signal, entryPrice, units, invested, remainingUnits, cashBefore, cashAfter, entryFee, exitFee, slippageCost, exitTime, exitPrice, currentPrice, breakEvenStop, PaperTradeOutcome.TakeProfit2);
             }
         }
 
         if (futureCandles.Count == 0)
         {
-            return CreatePortfolioTrade(signal, units, invested, cashBefore, cashAfterEntry, null, null, currentPrice, PaperTradeOutcome.Open);
+            return CreatePortfolioTrade(signal, entryPrice, units, invested, remainingUnits, cashBefore, cashAfter, entryFee, exitFee, slippageCost, null, null, currentPrice, breakEvenStop, PaperTradeOutcome.Open);
         }
 
-        var lastCandle = futureCandles[^1];
+        var expiryPrice = ApplySellSlippage(futureCandles[^1].ClosePrice, slippageRate);
+        exitTime = lastOpenTime;
+        exitPrice = expiryPrice;
+        currentPrice = expiryPrice;
+        exitFee += CloseUnits(remainingUnits, currentPrice, feeRate, ref cashAfter);
+        slippageCost += Math.Max(0m, futureCandles[^1].ClosePrice - currentPrice) * remainingUnits;
+        remainingUnits = 0m;
+
         return CreatePortfolioTrade(
             signal,
+            entryPrice,
             units,
             invested,
+            remainingUnits,
             cashBefore,
-            cashAfterEntry + (units * lastCandle.ClosePrice),
-            lastCandle.OpenTime,
-            lastCandle.ClosePrice,
-            lastCandle.ClosePrice,
+            cashAfter,
+            entryFee,
+            exitFee,
+            slippageCost,
+            exitTime,
+            exitPrice,
+            currentPrice,
+            breakEvenStop,
             PaperTradeOutcome.Expired);
     }
 
     private static PaperPortfolioTrade CreatePortfolioTrade(
         SignalEntity signal,
+        decimal entryPrice,
         decimal units,
         decimal invested,
+        decimal remainingUnits,
         decimal cashBefore,
         decimal cashAfter,
+        decimal entryFee,
+        decimal exitFee,
+        decimal slippageCost,
         DateTime? exitTime,
         decimal? exitPrice,
         decimal currentPrice,
+        decimal? breakEvenStop,
         PaperTradeOutcome outcome)
     {
         return new PaperPortfolioTrade(
@@ -456,15 +538,43 @@ public sealed class EfPersistenceService(CryptoSignalBotDbContext dbContext, IOp
             signal.Symbol,
             signal.Timeframe,
             signal.CreatedAt,
-            signal.Price,
+            entryPrice,
             units,
             invested,
+            remainingUnits,
             cashBefore,
             cashAfter,
+            entryFee,
+            exitFee,
+            slippageCost,
             exitTime,
             exitPrice,
             currentPrice,
+            breakEvenStop,
             outcome);
+    }
+
+    private static decimal ApplyBuySlippage(decimal price, decimal slippageRate)
+    {
+        return price * (1m + slippageRate);
+    }
+
+    private static decimal ApplySellSlippage(decimal price, decimal slippageRate)
+    {
+        return price * (1m - slippageRate);
+    }
+
+    private static decimal CalculateFee(decimal notional, decimal feeRate)
+    {
+        return notional * feeRate;
+    }
+
+    private static decimal CloseUnits(decimal units, decimal price, decimal feeRate, ref decimal cash)
+    {
+        var notional = units * price;
+        var fee = CalculateFee(notional, feeRate);
+        cash += notional - fee;
+        return fee;
     }
 
     private static PaperTradeResult CreatePaperResult(

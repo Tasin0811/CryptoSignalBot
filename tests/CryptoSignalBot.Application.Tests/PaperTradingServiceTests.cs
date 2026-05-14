@@ -10,17 +10,39 @@ namespace CryptoSignalBot.Application.Tests;
 public sealed class PaperTradingServiceTests
 {
     [Fact]
-    public void Evaluate_ClosesAtTakeProfit1()
+    public void Evaluate_ClosesPartialAtTakeProfit1ThenMovesRemainingStopToBreakEven()
     {
         var service = new PaperTradingService();
         var signal = CreateSignal();
-        var candles = new[] { CreateFutureCandle(high: 106m, low: 99m, close: 105m) };
+        var candles = new[]
+        {
+            CreateFutureCandle(high: 106m, low: 101m, close: 105m),
+            CreateFutureCandle(openOffsetHours: 2, high: 104m, low: 100m, close: 101m)
+        };
 
         var result = service.Evaluate(signal, candles, maxCandles: 10);
 
         Assert.Equal(PaperTradeOutcome.TakeProfit1, result.Outcome);
-        Assert.Equal(105m, result.ExitPrice);
-        Assert.Equal(5m, result.ReturnPercent);
+        Assert.Equal(100m, result.ExitPrice);
+        Assert.Equal(0m, result.ReturnPercent);
+    }
+
+    [Fact]
+    public void Evaluate_ClosesPartialAtTakeProfit1ThenRemainingAtTakeProfit2()
+    {
+        var service = new PaperTradingService();
+        var signal = CreateSignal();
+        var candles = new[]
+        {
+            CreateFutureCandle(high: 106m, low: 101m, close: 105m),
+            CreateFutureCandle(openOffsetHours: 2, high: 111m, low: 104m, close: 110m)
+        };
+
+        var result = service.Evaluate(signal, candles, maxCandles: 10);
+
+        Assert.Equal(PaperTradeOutcome.TakeProfit2, result.Outcome);
+        Assert.Equal(110m, result.ExitPrice);
+        Assert.Equal(10m, result.ReturnPercent);
     }
 
     [Fact]
@@ -132,13 +154,13 @@ public sealed class PaperTradingServiceTests
             Array.Empty<RuleResult>());
     }
 
-    private static Candle CreateFutureCandle(decimal high, decimal low, decimal close)
+    private static Candle CreateFutureCandle(decimal high, decimal low, decimal close, int openOffsetHours = 1)
     {
         return new Candle(
             "BTCUSDT",
             "1h",
-            new DateTime(2026, 5, 9, 13, 0, 0, DateTimeKind.Utc),
-            new DateTime(2026, 5, 9, 13, 59, 59, DateTimeKind.Utc),
+            new DateTime(2026, 5, 9, 12 + openOffsetHours, 0, 0, DateTimeKind.Utc),
+            new DateTime(2026, 5, 9, 12 + openOffsetHours, 59, 59, DateTimeKind.Utc),
             100m,
             high,
             low,
