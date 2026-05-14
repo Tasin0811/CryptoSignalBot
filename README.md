@@ -84,6 +84,12 @@ Guida completa: `GITHUB.md`.
 
 ## Comandi utili
 
+Guida per principianti a trading, segnali, portfolio test e funzionalita' app:
+
+```text
+GUIDA_TRADING_E_APP.md
+```
+
 Dashboard grafica:
 
 ```powershell
