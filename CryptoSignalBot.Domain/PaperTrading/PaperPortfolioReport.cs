@@ -20,12 +20,78 @@ public sealed record PaperPortfolioReport(
     public decimal AverageInvested => Trades.Count == 0 ? 0m : decimal.Round(TotalInvested / Trades.Count, 8);
     public decimal BestTradeProfitLoss => Trades.Count == 0 ? 0m : Trades.Max(trade => trade.ProfitLoss);
     public decimal WorstTradeProfitLoss => Trades.Count == 0 ? 0m : Trades.Min(trade => trade.ProfitLoss);
+    public decimal AverageWin => Wins == 0 ? 0m : decimal.Round(Trades.Where(trade => trade.IsClosed && trade.ProfitLoss > 0m).Average(trade => trade.ProfitLoss), 8);
+    public decimal AverageLoss => Losses == 0 ? 0m : decimal.Round(Trades.Where(trade => trade.IsClosed && trade.ProfitLoss < 0m).Average(trade => trade.ProfitLoss), 8);
+    public decimal ProfitFactor
+    {
+        get
+        {
+            var grossProfit = Trades.Where(trade => trade.IsClosed && trade.ProfitLoss > 0m).Sum(trade => trade.ProfitLoss);
+            var grossLoss = Math.Abs(Trades.Where(trade => trade.IsClosed && trade.ProfitLoss < 0m).Sum(trade => trade.ProfitLoss));
+            return grossLoss <= 0m ? (grossProfit > 0m ? decimal.Round(grossProfit, 8) : 0m) : decimal.Round(grossProfit / grossLoss, 4);
+        }
+    }
+    public decimal Expectancy => ClosedCount == 0 ? 0m : decimal.Round(Trades.Where(trade => trade.IsClosed).Average(trade => trade.ProfitLoss), 8);
+    public decimal ExpectancyPercent => InitialBudget <= 0m ? 0m : decimal.Round(Expectancy / InitialBudget * 100m, 4);
+    public decimal MaxDrawdown => CalculateMaxDrawdown().Amount;
+    public decimal MaxDrawdownPercent => CalculateMaxDrawdown().Percent;
     public int ClosedCount => Trades.Count(trade => trade.IsClosed);
     public int OpenCount => Trades.Count(trade => !trade.IsClosed);
     public int Wins => Trades.Count(trade => trade.IsClosed && trade.ProfitLoss > 0m);
     public int Losses => Trades.Count(trade => trade.IsClosed && trade.ProfitLoss < 0m);
     public decimal WinRate => ClosedCount == 0 ? 0m : decimal.Round((decimal)Wins / ClosedCount * 100m, 2);
+
+    private (decimal Amount, decimal Percent) CalculateMaxDrawdown()
+    {
+        var peak = InitialBudget;
+        var maxDrawdown = 0m;
+
+        foreach (var point in EquityCurve)
+        {
+            if (point.Equity > peak)
+            {
+                peak = point.Equity;
+            }
+
+            var drawdown = peak - point.Equity;
+            if (drawdown > maxDrawdown)
+            {
+                maxDrawdown = drawdown;
+            }
+        }
+
+        var percent = peak <= 0m ? 0m : decimal.Round(maxDrawdown / peak * 100m, 2);
+        return (decimal.Round(maxDrawdown, 8), percent);
+    }
+
+    public IReadOnlyList<PaperPortfolioEquityPoint> EquityCurve
+    {
+        get
+        {
+            var points = new List<PaperPortfolioEquityPoint>
+            {
+                new(FirstTradeAt ?? CreatedAt.UtcDateTime, InitialBudget, 0m, "Start")
+            };
+
+            foreach (var trade in Trades.OrderBy(trade => trade.EntryTime))
+            {
+                points.Add(new PaperPortfolioEquityPoint(
+                    trade.ExitTime ?? trade.EntryTime,
+                    trade.CashAfter + trade.CurrentValue,
+                    trade.ProfitLoss,
+                    trade.Symbol));
+            }
+
+            return points;
+        }
+    }
 }
+
+public sealed record PaperPortfolioEquityPoint(
+    DateTime Time,
+    decimal Equity,
+    decimal ProfitLoss,
+    string Label);
 
 public sealed record PaperPortfolioTrade(
     long SignalId,

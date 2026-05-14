@@ -187,6 +187,13 @@ app.MapGet("/api/paper/portfolio", async (
         report.AverageInvested,
         report.BestTradeProfitLoss,
         report.WorstTradeProfitLoss,
+        report.AverageWin,
+        report.AverageLoss,
+        report.ProfitFactor,
+        report.Expectancy,
+        report.ExpectancyPercent,
+        report.MaxDrawdown,
+        report.MaxDrawdownPercent,
         report.ClosedCount,
         report.OpenCount,
         report.Wins,
@@ -195,7 +202,14 @@ app.MapGet("/api/paper/portfolio", async (
         trades = report.Trades
             .OrderByDescending(trade => trade.EntryTime)
             .Take(20)
-            .Select(ToPaperPortfolioTradeDto)
+            .Select(ToPaperPortfolioTradeDto),
+        equityCurve = report.EquityCurve.Select(point => new
+        {
+            point.Time,
+            point.Equity,
+            point.ProfitLoss,
+            point.Label
+        })
     });
 });
 
@@ -428,6 +442,11 @@ internal static class DashboardPage
     .legend-grid { display:grid; grid-template-columns:repeat(2, minmax(220px, 1fr)); gap:10px 18px; margin-top:12px; font-size:13px; }
     .legend-grid div { color:var(--muted); }
     .legend-grid strong { display:block; color:var(--ink); margin-bottom:2px; }
+    .chart { width:100%; height:260px; border:1px solid var(--line); border-radius:8px; background:#fbfcfd; margin:14px 0 18px; }
+    .chart path.line { fill:none; stroke:var(--accent); stroke-width:2.5; }
+    .chart path.area { fill:rgba(18,113,91,.10); stroke:none; }
+    .chart line.grid { stroke:#e5ebf0; stroke-width:1; }
+    .chart text { fill:var(--muted); font-size:12px; }
     table { width:100%; border-collapse:collapse; font-size:13px; }
     th, td { padding:10px 8px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
     th { color:var(--muted); font-weight:600; }
@@ -517,6 +536,9 @@ internal static class DashboardPage
             <div><strong>Guadagno/perdita</strong>Differenza tra equity simulata e budget iniziale.</div>
             <div><strong>P/L realizzato</strong>Profitto o perdita dei trade gia' chiusi. Le posizioni aperte non sono incluse.</div>
             <div><strong>Win rate</strong>Percentuale dei trade chiusi in profitto. Con pochi trade puo' essere ingannevole.</div>
+            <div><strong>Profit factor</strong>Rapporto tra profitti lordi e perdite lorde. Sopra 1 significa che i trade chiusi stanno producendo piu' profitto che perdita.</div>
+            <div><strong>Expectancy</strong>Guadagno o perdita media attesa per trade chiuso, in base ai trade gia' simulati.</div>
+            <div><strong>Drawdown massimo</strong>La peggior discesa del wallet dal suo massimo precedente. Serve a capire quanto soffre il portafoglio.</div>
             <div><strong>Open</strong>Trade ancora aperto: non ha ancora preso stop loss, take profit o scadenza.</div>
             <div><strong>Take profit</strong>Uscita in guadagno perche' il prezzo ha raggiunto il primo obiettivo.</div>
             <div><strong>TP1 / TP2</strong>TP1 vende una parte della posizione. TP2 chiude il resto se il movimento continua.</div>
@@ -541,7 +563,12 @@ internal static class DashboardPage
           <div class="metric"><span class="status">Win rate</span><strong id="portfolioWinRate">0%</strong></div>
           <div class="metric"><span class="status">Periodo replay</span><strong id="portfolioPeriod">-</strong></div>
           <div class="metric"><span class="status">Miglior / peggior trade</span><strong id="portfolioBestWorst">0 / 0</strong></div>
+          <div class="metric"><span class="status">Profit factor</span><strong id="portfolioProfitFactor">0</strong></div>
+          <div class="metric"><span class="status">Expectancy</span><strong id="portfolioExpectancy">0</strong></div>
+          <div class="metric"><span class="status">Drawdown max</span><strong id="portfolioDrawdown">0</strong></div>
+          <div class="metric"><span class="status">Media win / loss</span><strong id="portfolioAvgWinLoss">0 / 0</strong></div>
         </div>
+        <svg id="portfolioChart" class="chart" viewBox="0 0 900 260" role="img" aria-label="Andamento equity portfolio"></svg>
         <div id="portfolioTrades"></div>
       </section>
       <section>
@@ -751,7 +778,57 @@ internal static class DashboardPage
         ? `${new Date(data.firstTradeAt).toLocaleDateString()} - ${new Date(data.lastTradeAt).toLocaleDateString()}`
         : "-";
       portfolioBestWorst.textContent = `${money(data.bestTradeProfitLoss)} / ${money(data.worstTradeProfitLoss)}`;
+      portfolioProfitFactor.textContent = Number(data.profitFactor ?? 0).toLocaleString(undefined, { maximumFractionDigits: 4 });
+      portfolioExpectancy.textContent = `${money(data.expectancy)} (${data.expectancyPercent ?? 0}%)`;
+      portfolioDrawdown.textContent = `${money(data.maxDrawdown)} (${data.maxDrawdownPercent ?? 0}%)`;
+      portfolioAvgWinLoss.textContent = `${money(data.averageWin)} / ${money(data.averageLoss)}`;
+      renderEquityChart(data.equityCurve || []);
       renderPortfolioTrades(data.trades || []);
+    }
+
+    function renderEquityChart(points) {
+      const svg = portfolioChart;
+      const width = 900;
+      const height = 260;
+      const pad = { left: 58, right: 18, top: 20, bottom: 34 };
+      svg.innerHTML = "";
+
+      if (!points.length) {
+        svg.innerHTML = `<text x="24" y="42">Nessun dato per il grafico.</text>`;
+        return;
+      }
+
+      const values = points.map(point => Number(point.equity));
+      let min = Math.min(...values);
+      let max = Math.max(...values);
+      if (min === max) {
+        min -= 1;
+        max += 1;
+      }
+      const plotWidth = width - pad.left - pad.right;
+      const plotHeight = height - pad.top - pad.bottom;
+      const x = index => pad.left + (points.length === 1 ? 0 : index / (points.length - 1) * plotWidth);
+      const y = value => pad.top + (max - value) / (max - min) * plotHeight;
+      const line = points.map((point, index) => `${index === 0 ? "M" : "L"}${x(index).toFixed(2)},${y(Number(point.equity)).toFixed(2)}`).join(" ");
+      const area = `${line} L${x(points.length - 1).toFixed(2)},${height - pad.bottom} L${pad.left},${height - pad.bottom} Z`;
+
+      const gridValues = [min, (min + max) / 2, max];
+      const grid = gridValues.map(value => {
+        const yy = y(value);
+        return `<line class="grid" x1="${pad.left}" x2="${width - pad.right}" y1="${yy}" y2="${yy}"></line><text x="10" y="${yy + 4}">${money(value)}</text>`;
+      }).join("");
+      const circles = points.map((point, index) => {
+        const cls = Number(point.profitLoss) >= 0 ? "var(--accent)" : "var(--bad)";
+        return `<circle cx="${x(index)}" cy="${y(Number(point.equity))}" r="3.5" fill="${cls}"><title>${escapeHtml(point.label)} ${new Date(point.time).toLocaleString()} equity ${money(point.equity)}</title></circle>`;
+      }).join("");
+
+      svg.innerHTML = `
+        ${grid}
+        <path class="area" d="${area}"></path>
+        <path class="line" d="${line}"></path>
+        ${circles}
+        <text x="${pad.left}" y="${height - 10}">${new Date(points[0].time).toLocaleDateString()}</text>
+        <text x="${width - 130}" y="${height - 10}">${new Date(points[points.length - 1].time).toLocaleDateString()}</text>`;
     }
 
     function renderPortfolioTrades(trades) {

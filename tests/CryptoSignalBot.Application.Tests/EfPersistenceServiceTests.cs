@@ -113,6 +113,10 @@ public sealed class EfPersistenceServiceTests
         Assert.True(report.TotalFees > 0m);
         Assert.True(trade.SlippageCost > 0m);
         Assert.True(trade.Units < 1m);
+        Assert.True(report.ProfitFactor > 0m);
+        Assert.True(report.Expectancy > 0m);
+        Assert.Equal(0m, report.MaxDrawdown);
+        Assert.True(report.EquityCurve.Count >= 2);
     }
 
     [Fact]
