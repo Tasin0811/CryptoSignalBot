@@ -233,6 +233,44 @@ CryptoSignalBot penalizza o blocca setup se:
 
 Questo riduce il numero di segnali, ma evita molti falsi positivi.
 
+## Evoluzione futura: stato del mondo
+
+Una possibile evoluzione utile e' aggiungere un modulo `World Context`.
+
+L'idea e' far valutare al bot non solo il grafico, ma anche il clima generale del mercato e del mondo. Le crypto possono muoversi per motivi che non sono visibili subito negli indicatori tecnici.
+
+Esempi di segnali esterni:
+
+- Crypto Fear & Greed Index.
+- news crypto rilevanti, come hack, fallimenti exchange, ETF, stablecoin depeg o regolamentazione.
+- eventi macroeconomici, come CPI USA, FOMC, decisioni sui tassi, dati occupazione.
+- condizioni risk-on/risk-off su mercati tradizionali.
+- forza del dollaro, indici azionari, oro o altri indicatori macro.
+
+Il modulo potrebbe produrre uno score semplice:
+
+```text
+WorldScore da -2 a +2
+```
+
+Esempi:
+
+- `+1`: contesto globale tranquillo e favorevole al rischio.
+- `0`: nessuna indicazione forte.
+- `-0.5`: evento macro importante in arrivo.
+- `-1.5`: news negativa o mercato molto fragile.
+- `-2`: panico o evento grave, meglio bloccare nuovi ingressi.
+
+In dashboard potrebbe comparire una sezione tipo:
+
+```text
+Stato mondo: Prudente
+Motivo: evento macro USA oggi, BTC debole, sentiment crypto in paura
+Effetto: soglia segnali piu' severa e rischio ridotto
+```
+
+Per la V1 attuale questo modulo non e' ancora attivo. La priorita' resta osservare il paper trading su Hetzner e raccogliere abbastanza trade chiusi prima di aggiungere nuovi filtri.
+
 ## Portfolio test
 
 Il portfolio test simula un wallet teorico.
@@ -259,16 +297,28 @@ Esempio:
 
 La colonna `Cash wallet` mostra proprio il saldo prima e dopo ogni trade.
 
-### Attenzione: e' un replay
+### Wallet paper persistente
 
-Il portfolio test e' un replay storico ricalcolato dai segnali salvati.
+Il portfolio test salva i trade simulati in una tabella dedicata del database.
 
 Significa:
 
 - non si resetta quando riavvii Docker.
 - non si resetta quando riavvii la VPS.
-- cambia se entrano nuovi segnali.
-- cambia se cancelli segnali vecchi con cleanup o retention.
+- i trade gia' simulati restano nello storico paper.
+- i trade aperti possono aggiornarsi quando arrivano nuove candele.
+- i nuovi segnali vengono aggiunti al wallet paper se rispettano le regole.
+
+Per un test serio su Hetzner e' meglio tenere una retention lunga, ad esempio:
+
+```text
+RetainCandlesDays=365
+RetainSignalsDays=365
+```
+
+Con retention troppo corta, ad esempio 30 giorni, il replay puo' perdere segnali/candele vecchie e sembrare meno stabile.
+
+I trade paper salvati restano anche se in futuro il cleanup rimuove vecchi segnali o vecchie candele. Questo rende il test piu' stabile rispetto a un replay puro.
 
 I dati sono salvati nel volume Docker. Non usare:
 

@@ -164,8 +164,8 @@ Endpoint dashboard utili:
 
 - `GET /api/status`: stato API/database e impostazioni bot non segrete.
 - `GET /api/signals/recent?days=7&take=30`: ultimi segnali salvati.
-- `GET /api/paper/summary?maxSignals=100&maxFutureCandles=24`: riepilogo paper trading.
-- `GET /api/paper/portfolio?initialBudget=500&maxSignals=100&maxFutureCandles=24`: portfolio simulato con P/L.
+- `GET /api/paper/summary?maxSignals=500&maxFutureCandles=120`: riepilogo paper trading.
+- `GET /api/paper/portfolio?initialBudget=500&maxSignals=500&maxFutureCandles=120`: portfolio simulato con P/L.
 - `GET /api/tasks/status`: stato Windows Scheduled Tasks.
 - `GET /api/export/signals.csv?days=30&take=1000`: export CSV segnali.
 - `POST /api/settings/bot`: salva solo impostazioni bot sanificate.

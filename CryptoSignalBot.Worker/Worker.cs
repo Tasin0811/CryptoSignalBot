@@ -349,7 +349,7 @@ public class Worker : BackgroundService
         using var scope = _scopeFactory.CreateScope();
         var persistenceService = scope.ServiceProvider.GetRequiredService<IPersistenceService>();
         var notificationService = scope.ServiceProvider.GetRequiredService<INotificationService>();
-        var report = await persistenceService.BuildPaperTradeReportAsync(100, 24, cancellationToken);
+        var report = await persistenceService.BuildPaperTradeReportAsync(500, 120, cancellationToken);
 
         _logger.LogInformation(
             "Paper trade report: results {Count}, closed {Closed}, wins {Wins}, losses {Losses}, open {Open}, expired {Expired}, win rate {WinRate}%.",

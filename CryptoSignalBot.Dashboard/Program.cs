@@ -123,8 +123,8 @@ app.MapGet("/api/paper/summary", async (
     int? maxFutureCandles,
     CancellationToken cancellationToken) =>
 {
-    var signalLimit = Math.Clamp(maxSignals.GetValueOrDefault(100), 1, 500);
-    var candleLimit = Math.Clamp(maxFutureCandles.GetValueOrDefault(24), 1, 500);
+    var signalLimit = Math.Clamp(maxSignals.GetValueOrDefault(500), 1, 1000);
+    var candleLimit = Math.Clamp(maxFutureCandles.GetValueOrDefault(120), 1, 1000);
     var report = await persistenceService.BuildPaperTradeReportAsync(signalLimit, candleLimit, cancellationToken);
 
     return Results.Ok(new
@@ -160,8 +160,8 @@ app.MapGet("/api/paper/portfolio", async (
         initialBudget.GetValueOrDefault(botSettings.Value.PaperPortfolioInitialBudget),
         10m,
         1_000_000m);
-    var signalLimit = Math.Clamp(maxSignals.GetValueOrDefault(100), 1, 500);
-    var candleLimit = Math.Clamp(maxFutureCandles.GetValueOrDefault(24), 1, 500);
+    var signalLimit = Math.Clamp(maxSignals.GetValueOrDefault(500), 1, 1000);
+    var candleLimit = Math.Clamp(maxFutureCandles.GetValueOrDefault(120), 1, 1000);
     var report = await persistenceService.BuildPaperPortfolioReportAsync(
         budget,
         signalLimit,
@@ -628,7 +628,7 @@ internal static class DashboardPage
     }
 
     async function loadPaperSummary() {
-      const response = await fetch("/api/paper/summary?maxSignals=100&maxFutureCandles=24");
+      const response = await fetch("/api/paper/summary?maxSignals=500&maxFutureCandles=120");
       if (!response.ok) {
         paperTrades.innerHTML = '<div class="empty">Paper summary non disponibile.</div>';
         return;
@@ -754,7 +754,7 @@ internal static class DashboardPage
     }
 
     async function loadPaperPortfolio() {
-      const response = await fetch(`/api/paper/portfolio?initialBudget=${encodeURIComponent(currentSettings?.paperPortfolioInitialBudget ?? 500)}&maxSignals=100&maxFutureCandles=24`);
+      const response = await fetch(`/api/paper/portfolio?initialBudget=${encodeURIComponent(currentSettings?.paperPortfolioInitialBudget ?? 500)}&maxSignals=500&maxFutureCandles=120`);
       if (!response.ok) {
         portfolioTrades.innerHTML = '<div class="empty">Portfolio test non disponibile.</div>';
         return;

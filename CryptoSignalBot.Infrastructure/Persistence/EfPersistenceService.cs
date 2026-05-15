@@ -179,12 +179,60 @@ public sealed class EfPersistenceService(CryptoSignalBotDbContext dbContext, IOp
         CancellationToken cancellationToken = default)
     {
         await EnsureDatabaseAsync(cancellationToken);
+        await SyncPersistentPaperTradesAsync(initialBudget, maxSignals, maxFutureCandles, cancellationToken);
 
         var startingBudget = initialBudget > 0m ? initialBudget : botSettings.Value.PaperPortfolioInitialBudget;
-        var cash = startingBudget;
-        var openPositionValue = 0m;
+        var trades = await dbContext.PaperTrades
+            .AsNoTracking()
+            .OrderBy(trade => trade.EntryTime)
+            .Take(Math.Max(1, maxSignals))
+            .Select(trade => MapPaperPortfolioTrade(trade))
+            .ToListAsync(cancellationToken);
+
+        var latestTrade = trades.OrderBy(trade => trade.EntryTime).LastOrDefault();
+        var cash = latestTrade?.CashAfter ?? startingBudget;
+        var openPositionValue = trades.Where(trade => !trade.IsClosed).Sum(trade => trade.CurrentValue);
+
+        return new PaperPortfolioReport(DateTimeOffset.UtcNow, startingBudget, cash, openPositionValue, trades);
+    }
+
+    private async Task SyncPersistentPaperTradesAsync(
+        decimal initialBudget,
+        int maxSignals,
+        int maxFutureCandles,
+        CancellationToken cancellationToken)
+    {
+        var startingBudget = initialBudget > 0m ? initialBudget : botSettings.Value.PaperPortfolioInitialBudget;
+        var persistedTrades = await dbContext.PaperTrades
+            .OrderBy(trade => trade.EntryTime)
+            .ToListAsync(cancellationToken);
+        var persistedSignalIds = persistedTrades.Select(trade => trade.SignalId).ToHashSet();
+        var cash = persistedTrades.LastOrDefault()?.CashAfter ?? startingBudget;
         var availableAt = DateTime.MinValue;
-        var trades = new List<PaperPortfolioTrade>();
+
+        foreach (var persistedTrade in persistedTrades)
+        {
+            if (Enum.TryParse<PaperTradeOutcome>(persistedTrade.Outcome, out var outcome) &&
+                outcome == PaperTradeOutcome.Open)
+            {
+                var signal = await dbContext.Signals
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(item => item.Id == persistedTrade.SignalId, cancellationToken);
+                if (signal is not null)
+                {
+                    var futureCandles = await GetFutureCandlesAsync(signal, maxFutureCandles, cancellationToken);
+                    var updatedTrade = CreatePortfolioTrade(signal, futureCandles, persistedTrade.CashBefore, botSettings.Value);
+                    if (updatedTrade is not null && updatedTrade.Outcome != PaperTradeOutcome.Open)
+                    {
+                        UpdatePaperTradeEntity(persistedTrade, updatedTrade);
+                        cash = persistedTrade.CashAfter;
+                    }
+                }
+            }
+
+            availableAt = persistedTrade.ExitTime ?? DateTime.MaxValue;
+        }
+
         var signals = await dbContext.Signals
             .AsNoTracking()
             .Where(signal => signal.Score >= botSettings.Value.MinScoreToNotify &&
@@ -197,41 +245,25 @@ public sealed class EfPersistenceService(CryptoSignalBotDbContext dbContext, IOp
 
         foreach (var signal in signals)
         {
-            if (signal.CreatedAt <= availableAt || cash <= 0m)
+            if (persistedSignalIds.Contains(signal.Id) || signal.CreatedAt <= availableAt || cash <= 0m)
             {
                 continue;
             }
 
-            var futureCandles = await dbContext.MarketCandles
-                .AsNoTracking()
-                .Where(candle => candle.Symbol == signal.Symbol &&
-                                 candle.Timeframe == signal.Timeframe &&
-                                 candle.OpenTime > signal.CreatedAt)
-                .OrderBy(candle => candle.OpenTime)
-                .Take(Math.Max(1, maxFutureCandles))
-                .ToListAsync(cancellationToken);
-
+            var futureCandles = await GetFutureCandlesAsync(signal, maxFutureCandles, cancellationToken);
             var trade = CreatePortfolioTrade(signal, futureCandles, cash, botSettings.Value);
             if (trade is null)
             {
                 continue;
             }
 
+            dbContext.PaperTrades.Add(CreatePaperTradeEntity(trade));
+            persistedSignalIds.Add(signal.Id);
             cash = trade.CashAfter;
-            if (trade.IsClosed)
-            {
-                availableAt = trade.ExitTime ?? signal.CreatedAt;
-            }
-            else
-            {
-                openPositionValue += trade.CurrentValue;
-                availableAt = DateTime.MaxValue;
-            }
-
-            trades.Add(trade);
+            availableAt = trade.ExitTime ?? DateTime.MaxValue;
         }
 
-        return new PaperPortfolioReport(DateTimeOffset.UtcNow, startingBudget, cash, openPositionValue, trades);
+        await dbContext.SaveChangesAsync(cancellationToken);
     }
 
     public async Task<int> CleanupDatabaseAsync(
@@ -287,7 +319,81 @@ public sealed class EfPersistenceService(CryptoSignalBotDbContext dbContext, IOp
             await dbContext.Database.EnsureCreatedAsync(cancellationToken);
         }
 
+        await EnsurePaperTradesTableAsync(cancellationToken);
         databaseReady = true;
+    }
+
+    private async Task EnsurePaperTradesTableAsync(CancellationToken cancellationToken)
+    {
+        if (dbContext.Database.IsSqlServer())
+        {
+            await dbContext.Database.ExecuteSqlRawAsync(
+                """
+                IF OBJECT_ID(N'[PaperTrades]', N'U') IS NULL
+                BEGIN
+                    CREATE TABLE [PaperTrades] (
+                        [Id] bigint NOT NULL IDENTITY,
+                        [SignalId] bigint NOT NULL,
+                        [Symbol] nvarchar(30) NOT NULL,
+                        [Timeframe] nvarchar(10) NOT NULL,
+                        [EntryTime] datetime2 NOT NULL,
+                        [EntryPrice] decimal(28,10) NOT NULL,
+                        [Units] decimal(28,10) NOT NULL,
+                        [Invested] decimal(28,10) NOT NULL,
+                        [RemainingUnits] decimal(28,10) NOT NULL,
+                        [CashBefore] decimal(28,10) NOT NULL,
+                        [CashAfter] decimal(28,10) NOT NULL,
+                        [EntryFee] decimal(28,10) NOT NULL,
+                        [ExitFee] decimal(28,10) NOT NULL,
+                        [SlippageCost] decimal(28,10) NOT NULL,
+                        [ExitTime] datetime2 NULL,
+                        [ExitPrice] decimal(28,10) NULL,
+                        [CurrentPrice] decimal(28,10) NOT NULL,
+                        [BreakEvenStop] decimal(28,10) NULL,
+                        [Outcome] nvarchar(30) NOT NULL,
+                        [CreatedAt] datetime2 NOT NULL,
+                        [UpdatedAt] datetime2 NOT NULL,
+                        CONSTRAINT [PK_PaperTrades] PRIMARY KEY ([Id])
+                    );
+                END
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_PaperTrades_SignalId' AND object_id = OBJECT_ID(N'[PaperTrades]'))
+                    CREATE UNIQUE INDEX [IX_PaperTrades_SignalId] ON [PaperTrades] ([SignalId]);
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_PaperTrades_EntryTime' AND object_id = OBJECT_ID(N'[PaperTrades]'))
+                    CREATE INDEX [IX_PaperTrades_EntryTime] ON [PaperTrades] ([EntryTime]);
+                """,
+                cancellationToken);
+            return;
+        }
+
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            CREATE TABLE IF NOT EXISTS "PaperTrades" (
+                "Id" INTEGER NOT NULL CONSTRAINT "PK_PaperTrades" PRIMARY KEY AUTOINCREMENT,
+                "SignalId" INTEGER NOT NULL,
+                "Symbol" TEXT NOT NULL,
+                "Timeframe" TEXT NOT NULL,
+                "EntryTime" TEXT NOT NULL,
+                "EntryPrice" TEXT NOT NULL,
+                "Units" TEXT NOT NULL,
+                "Invested" TEXT NOT NULL,
+                "RemainingUnits" TEXT NOT NULL,
+                "CashBefore" TEXT NOT NULL,
+                "CashAfter" TEXT NOT NULL,
+                "EntryFee" TEXT NOT NULL,
+                "ExitFee" TEXT NOT NULL,
+                "SlippageCost" TEXT NOT NULL,
+                "ExitTime" TEXT NULL,
+                "ExitPrice" TEXT NULL,
+                "CurrentPrice" TEXT NOT NULL,
+                "BreakEvenStop" TEXT NULL,
+                "Outcome" TEXT NOT NULL,
+                "CreatedAt" TEXT NOT NULL,
+                "UpdatedAt" TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_PaperTrades_SignalId" ON "PaperTrades" ("SignalId");
+            CREATE INDEX IF NOT EXISTS "IX_PaperTrades_EntryTime" ON "PaperTrades" ("EntryTime");
+            """,
+            cancellationToken);
     }
 
     private async Task EnsureSqlServerIndexAsync(
@@ -552,6 +658,91 @@ public sealed class EfPersistenceService(CryptoSignalBotDbContext dbContext, IOp
             currentPrice,
             breakEvenStop,
             outcome);
+    }
+
+    private async Task<List<MarketCandleEntity>> GetFutureCandlesAsync(
+        SignalEntity signal,
+        int maxFutureCandles,
+        CancellationToken cancellationToken)
+    {
+        return await dbContext.MarketCandles
+            .AsNoTracking()
+            .Where(candle => candle.Symbol == signal.Symbol &&
+                             candle.Timeframe == signal.Timeframe &&
+                             candle.OpenTime > signal.CreatedAt)
+            .OrderBy(candle => candle.OpenTime)
+            .Take(Math.Max(1, maxFutureCandles))
+            .ToListAsync(cancellationToken);
+    }
+
+    private static PaperTradeEntity CreatePaperTradeEntity(PaperPortfolioTrade trade)
+    {
+        var now = DateTime.UtcNow;
+        return new PaperTradeEntity
+        {
+            SignalId = trade.SignalId,
+            Symbol = trade.Symbol,
+            Timeframe = trade.Timeframe,
+            EntryTime = trade.EntryTime,
+            EntryPrice = trade.EntryPrice,
+            Units = trade.Units,
+            Invested = trade.Invested,
+            RemainingUnits = trade.RemainingUnits,
+            CashBefore = trade.CashBefore,
+            CashAfter = trade.CashAfter,
+            EntryFee = trade.EntryFee,
+            ExitFee = trade.ExitFee,
+            SlippageCost = trade.SlippageCost,
+            ExitTime = trade.ExitTime,
+            ExitPrice = trade.ExitPrice,
+            CurrentPrice = trade.CurrentPrice,
+            BreakEvenStop = trade.BreakEvenStop,
+            Outcome = trade.Outcome.ToString(),
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+    }
+
+    private static void UpdatePaperTradeEntity(PaperTradeEntity entity, PaperPortfolioTrade trade)
+    {
+        entity.EntryPrice = trade.EntryPrice;
+        entity.Units = trade.Units;
+        entity.Invested = trade.Invested;
+        entity.RemainingUnits = trade.RemainingUnits;
+        entity.CashBefore = trade.CashBefore;
+        entity.CashAfter = trade.CashAfter;
+        entity.EntryFee = trade.EntryFee;
+        entity.ExitFee = trade.ExitFee;
+        entity.SlippageCost = trade.SlippageCost;
+        entity.ExitTime = trade.ExitTime;
+        entity.ExitPrice = trade.ExitPrice;
+        entity.CurrentPrice = trade.CurrentPrice;
+        entity.BreakEvenStop = trade.BreakEvenStop;
+        entity.Outcome = trade.Outcome.ToString();
+        entity.UpdatedAt = DateTime.UtcNow;
+    }
+
+    private static PaperPortfolioTrade MapPaperPortfolioTrade(PaperTradeEntity trade)
+    {
+        return new PaperPortfolioTrade(
+            trade.SignalId,
+            trade.Symbol,
+            trade.Timeframe,
+            trade.EntryTime,
+            trade.EntryPrice,
+            trade.Units,
+            trade.Invested,
+            trade.RemainingUnits,
+            trade.CashBefore,
+            trade.CashAfter,
+            trade.EntryFee,
+            trade.ExitFee,
+            trade.SlippageCost,
+            trade.ExitTime,
+            trade.ExitPrice,
+            trade.CurrentPrice,
+            trade.BreakEvenStop,
+            Enum.TryParse<PaperTradeOutcome>(trade.Outcome, out var outcome) ? outcome : PaperTradeOutcome.Invalid);
     }
 
     private static decimal ApplyBuySlippage(decimal price, decimal slippageRate)

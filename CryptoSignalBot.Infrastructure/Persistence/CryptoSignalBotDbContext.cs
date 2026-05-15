@@ -13,6 +13,8 @@ public sealed class CryptoSignalBotDbContext(DbContextOptions<CryptoSignalBotDbC
 
     public DbSet<SignalRuleResultEntity> SignalRuleResults => Set<SignalRuleResultEntity>();
 
+    public DbSet<PaperTradeEntity> PaperTrades => Set<PaperTradeEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(CryptoSignalBotDbContext).Assembly);

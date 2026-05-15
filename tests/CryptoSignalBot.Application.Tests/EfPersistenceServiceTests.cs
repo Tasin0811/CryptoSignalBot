@@ -142,6 +142,34 @@ public sealed class EfPersistenceServiceTests
         Assert.True(report.TotalFees > 0m);
     }
 
+    [Fact]
+    public async Task BuildPaperPortfolioReportAsync_PersistsPaperTradeAcrossLaterReplayChanges()
+    {
+        await using var database = await CreateDatabaseAsync();
+        var service = CreateService(database.Context);
+        var signalTime = new DateTimeOffset(2026, 5, 9, 12, 0, 0, TimeSpan.Zero);
+
+        await service.SaveSignalAsync(CreateSignal(createdAt: signalTime, price: 100m));
+        await service.SaveCandlesAsync(
+        [
+            new Candle("BTCUSDT", "1h", signalTime.UtcDateTime.AddHours(1), signalTime.UtcDateTime.AddHours(2).AddSeconds(-1), 100m, 106m, 101m, 105m, 1000m),
+            new Candle("BTCUSDT", "1h", signalTime.UtcDateTime.AddHours(2), signalTime.UtcDateTime.AddHours(3).AddSeconds(-1), 105m, 111m, 104m, 110m, 1000m)
+        ]);
+
+        var firstReport = await service.BuildPaperPortfolioReportAsync(500m, maxSignals: 10, maxFutureCandles: 5);
+        var firstTrade = Assert.Single(firstReport.Trades);
+
+        await database.Context.Signals.ExecuteDeleteAsync();
+        await database.Context.MarketCandles.ExecuteDeleteAsync();
+
+        var secondReport = await service.BuildPaperPortfolioReportAsync(500m, maxSignals: 10, maxFutureCandles: 5);
+        var secondTrade = Assert.Single(secondReport.Trades);
+
+        Assert.Equal(firstTrade.SignalId, secondTrade.SignalId);
+        Assert.Equal(firstTrade.Outcome, secondTrade.Outcome);
+        Assert.Equal(firstReport.Equity, secondReport.Equity);
+    }
+
     private static async Task<TestDatabase> CreateDatabaseAsync()
     {
         var connection = new SqliteConnection("Data Source=:memory:");

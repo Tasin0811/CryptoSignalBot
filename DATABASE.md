@@ -52,6 +52,30 @@ CREATE TABLE SignalRuleResults (
     Result NVARCHAR(30) NOT NULL,
     Details NVARCHAR(MAX) NULL
 );
+
+CREATE TABLE PaperTrades (
+    Id BIGINT IDENTITY PRIMARY KEY,
+    SignalId BIGINT NOT NULL UNIQUE,
+    Symbol NVARCHAR(30) NOT NULL,
+    Timeframe NVARCHAR(10) NOT NULL,
+    EntryTime DATETIME2 NOT NULL,
+    EntryPrice DECIMAL(28,10) NOT NULL,
+    Units DECIMAL(28,10) NOT NULL,
+    Invested DECIMAL(28,10) NOT NULL,
+    RemainingUnits DECIMAL(28,10) NOT NULL,
+    CashBefore DECIMAL(28,10) NOT NULL,
+    CashAfter DECIMAL(28,10) NOT NULL,
+    EntryFee DECIMAL(28,10) NOT NULL,
+    ExitFee DECIMAL(28,10) NOT NULL,
+    SlippageCost DECIMAL(28,10) NOT NULL,
+    ExitTime DATETIME2 NULL,
+    ExitPrice DECIMAL(28,10) NULL,
+    CurrentPrice DECIMAL(28,10) NOT NULL,
+    BreakEvenStop DECIMAL(28,10) NULL,
+    Outcome NVARCHAR(30) NOT NULL,
+    CreatedAt DATETIME2 NOT NULL,
+    UpdatedAt DATETIME2 NOT NULL
+);
 ```
 
 ## Indici operativi
@@ -60,8 +84,12 @@ CREATE TABLE SignalRuleResults (
 - `MarketCandles(OpenTime)`: accelera retention cleanup.
 - `Signals(Symbol, Timeframe, SignalType, CreatedAt)`: accelera deduplica segnali.
 - `Signals(CreatedAt)`: accelera retention cleanup.
+- `PaperTrades(SignalId)` unique: evita duplicati nel wallet paper persistente.
+- `PaperTrades(EntryTime)`: accelera report portfolio paper.
 
 Il worker crea automaticamente il database se non esiste e verifica gli indici operativi su SQL Server LocalDB durante l'avvio della persistenza. In questo modo un database gia' presente resta aggiornabile senza cancellare lo storico.
+
+Su SQLite/Hetzner, la tabella `PaperTrades` viene creata automaticamente se manca. I trade paper gia' salvati non vengono rimossi dal cleanup di candele/segnali.
 
 ## EF Core migrations
 
