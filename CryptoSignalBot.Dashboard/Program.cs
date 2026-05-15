@@ -18,9 +18,11 @@ var workerSettingsPath = ResolveWorkerSettingsPath(builder.Environment.ContentRo
 var workerProductionSettingsPath = ResolveEnvironmentSettingsPath(
     workerSettingsPath,
     builder.Environment.EnvironmentName);
+var runtimeSettingsPath = ResolveRuntimeSettingsPath();
 builder.Configuration
     .AddJsonFile(workerSettingsPath, optional: true, reloadOnChange: true)
     .AddJsonFile(workerProductionSettingsPath, optional: true, reloadOnChange: true)
+    .AddJsonFile(runtimeSettingsPath, optional: true, reloadOnChange: true)
     .AddCryptoSignalBotEnvironmentVariables();
 builder.Services.Configure<BotSettings>(builder.Configuration.GetSection("Bot"));
 builder.Services.Configure<BinanceSettings>(builder.Configuration.GetSection("Binance"));
@@ -241,7 +243,7 @@ app.MapGet("/api/export/signals.csv", async (
 app.MapPost("/api/settings/bot", async (BotSettingsDto input, CancellationToken cancellationToken) =>
 {
     var sanitized = input.Sanitize();
-    await UpdateBotSettingsAsync(workerSettingsPath, sanitized, cancellationToken);
+    await UpdateBotSettingsAsync(runtimeSettingsPath, sanitized, cancellationToken);
     return Results.Ok(new { saved = true, settings = sanitized });
 });
 
@@ -305,6 +307,17 @@ static string ResolveEnvironmentSettingsPath(string settingsPath, string environ
     return Path.Combine(directory, $"{fileName}.{environmentName}.json");
 }
 
+static string ResolveRuntimeSettingsPath()
+{
+    var configured = Environment.GetEnvironmentVariable("CRYPTO_SIGNAL_BOT_RUNTIME_SETTINGS");
+    if (!string.IsNullOrWhiteSpace(configured))
+    {
+        return Path.GetFullPath(configured);
+    }
+
+    return Path.Combine(AppContext.BaseDirectory, "appsettings.runtime.json");
+}
+
 static object ToPaperTradeDto(PaperTradeResult result)
 {
     return new
@@ -361,10 +374,15 @@ static async Task UpdateBotSettingsAsync(
     CancellationToken cancellationToken)
 {
     JsonNode root;
-    await using (var stream = File.OpenRead(appsettingsPath))
+    if (File.Exists(appsettingsPath))
     {
+        await using var stream = File.OpenRead(appsettingsPath);
         root = await JsonNode.ParseAsync(stream, cancellationToken: cancellationToken)
-            ?? new JsonObject();
+               ?? new JsonObject();
+    }
+    else
+    {
+        root = new JsonObject();
     }
 
     if (root is not JsonObject rootObject)
@@ -393,6 +411,7 @@ static async Task UpdateBotSettingsAsync(
     };
 
     var json = rootObject.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+    Directory.CreateDirectory(Path.GetDirectoryName(appsettingsPath) ?? ".");
     var tempPath = $"{appsettingsPath}.tmp";
     await File.WriteAllTextAsync(tempPath, json, cancellationToken);
     File.Move(tempPath, appsettingsPath, overwrite: true);

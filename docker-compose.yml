@@ -13,6 +13,7 @@ services:
       PORT: 5055
       DATABASE_CONNECTION_STRING: Data Source=/app/data/cryptosignalbot.db
       CRYPTO_SIGNAL_BOT_LOG_DIR: /app/logs
+      CRYPTO_SIGNAL_BOT_RUNTIME_SETTINGS: /app/data/appsettings.runtime.json
     ports:
       - "5055:5055"
     volumes:
@@ -31,6 +32,7 @@ services:
       ASPNETCORE_ENVIRONMENT: Production
       DATABASE_CONNECTION_STRING: Data Source=/app/data/cryptosignalbot.db
       CRYPTO_SIGNAL_BOT_LOG_DIR: /app/logs
+      CRYPTO_SIGNAL_BOT_RUNTIME_SETTINGS: /app/data/appsettings.runtime.json
       SCHEDULE_ANALYZE_SECONDS: 900
       SCHEDULE_REPORT_SECONDS: 21600
       SCHEDULE_CLEANUP_SECONDS: 86400

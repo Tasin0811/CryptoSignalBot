@@ -6,6 +6,12 @@ using CryptoSignalBot.Worker;
 using Serilog;
 
 var builder = Host.CreateApplicationBuilder(args);
+var runtimeSettingsPath = Environment.GetEnvironmentVariable("CRYPTO_SIGNAL_BOT_RUNTIME_SETTINGS");
+if (!string.IsNullOrWhiteSpace(runtimeSettingsPath))
+{
+    builder.Configuration.AddJsonFile(runtimeSettingsPath, optional: true, reloadOnChange: true);
+}
+
 builder.Configuration.AddCryptoSignalBotEnvironmentVariables();
 
 var logRoot = Environment.GetEnvironmentVariable("CRYPTO_SIGNAL_BOT_LOG_DIR");
