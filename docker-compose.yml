@@ -14,6 +14,12 @@ services:
       DATABASE_CONNECTION_STRING: Data Source=/app/data/cryptosignalbot.db
       CRYPTO_SIGNAL_BOT_LOG_DIR: /app/logs
       CRYPTO_SIGNAL_BOT_RUNTIME_SETTINGS: /app/data/appsettings.runtime.json
+      BOT_TIMEFRAMES: 4h,1d
+      BOT_REPORT_TIMEFRAMES: 4h,1d
+      BOT_MIN_SCORE_TO_NOTIFY: 8
+      BOT_RISK_PERCENT: 0.005
+      BOT_RETAIN_CANDLES_DAYS: 365
+      BOT_RETAIN_SIGNALS_DAYS: 365
     ports:
       - "5055:5055"
     volumes:
@@ -33,6 +39,12 @@ services:
       DATABASE_CONNECTION_STRING: Data Source=/app/data/cryptosignalbot.db
       CRYPTO_SIGNAL_BOT_LOG_DIR: /app/logs
       CRYPTO_SIGNAL_BOT_RUNTIME_SETTINGS: /app/data/appsettings.runtime.json
+      BOT_TIMEFRAMES: 4h,1d
+      BOT_REPORT_TIMEFRAMES: 4h,1d
+      BOT_MIN_SCORE_TO_NOTIFY: 8
+      BOT_RISK_PERCENT: 0.005
+      BOT_RETAIN_CANDLES_DAYS: 365
+      BOT_RETAIN_SIGNALS_DAYS: 365
       SCHEDULE_ANALYZE_SECONDS: 900
       SCHEDULE_REPORT_SECONDS: 21600
       SCHEDULE_CLEANUP_SECONDS: 86400

@@ -15,6 +15,12 @@ public static class EnvironmentConfiguration
         AddIfSet(values, "SMTP_TO", "Email:To");
         AddIfSet(values, "DATABASE_CONNECTION_STRING", "ConnectionStrings:CryptoSignalBot");
         AddIfSet(values, "COINGECKO_API_KEY", "CoinGecko:ApiKey");
+        AddArrayIfSet(values, "BOT_TIMEFRAMES", "Bot:Timeframes");
+        AddArrayIfSet(values, "BOT_REPORT_TIMEFRAMES", "Bot:ReportTimeframes");
+        AddIfSet(values, "BOT_MIN_SCORE_TO_NOTIFY", "Bot:MinScoreToNotify");
+        AddIfSet(values, "BOT_RISK_PERCENT", "Bot:RiskPercent");
+        AddIfSet(values, "BOT_RETAIN_CANDLES_DAYS", "Bot:RetainCandlesDays");
+        AddIfSet(values, "BOT_RETAIN_SIGNALS_DAYS", "Bot:RetainSignalsDays");
 
         if (values.Count > 0)
         {
@@ -30,6 +36,23 @@ public static class EnvironmentConfiguration
         if (!string.IsNullOrWhiteSpace(value))
         {
             values[configurationKey] = value;
+        }
+    }
+
+    private static void AddArrayIfSet(IDictionary<string, string?> values, string environmentName, string configurationKey)
+    {
+        var value = Environment.GetEnvironmentVariable(environmentName);
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        var items = value
+            .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+            .ToArray();
+        for (var index = 0; index < items.Length; index++)
+        {
+            values[$"{configurationKey}:{index}"] = items[index];
         }
     }
 }
