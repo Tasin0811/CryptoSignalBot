@@ -466,8 +466,8 @@ internal static class DashboardPage
       <div class="status" id="clock">Caricamento...</div>
     </div>
     <div class="toolbar">
-      <button class="secondary" onclick="loadStatus()">Aggiorna</button>
-      <button onclick="saveSettings()">Salva impostazioni</button>
+      <button type="button" class="secondary" onclick="loadStatus()">Aggiorna</button>
+      <button type="button" onclick="saveSettings(event)">Salva impostazioni</button>
     </div>
   </header>
   <main>
@@ -500,11 +500,11 @@ internal static class DashboardPage
       <section>
         <h2>Azioni rapide</h2>
         <div class="toolbar">
-          <button onclick="runCommand('report-watchlist')">Invia report ora</button>
-          <button class="secondary" onclick="runCommand('paper-trade-report')">Paper report</button>
-          <button class="secondary" onclick="runCommand('backtest-report')">Backtest</button>
-          <button class="warning" onclick="runCommand('cleanup-db')">Cleanup DB</button>
-          <button class="secondary" onclick="window.location.href='/api/export/signals.csv?days=30&take=1000'">Export CSV</button>
+          <button type="button" onclick="runCommand('report-watchlist')">Invia report ora</button>
+          <button type="button" class="secondary" onclick="runCommand('paper-trade-report')">Paper report</button>
+          <button type="button" class="secondary" onclick="runCommand('backtest-report')">Backtest</button>
+          <button type="button" class="warning" onclick="runCommand('cleanup-db')">Cleanup DB</button>
+          <button type="button" class="secondary" onclick="window.location.href='/api/export/signals.csv?days=30&take=1000'">Export CSV</button>
         </div>
         <p class="status" id="commandStatus">Pronto.</p>
         <pre id="commandOutput" hidden></pre>
@@ -670,7 +670,8 @@ internal static class DashboardPage
       dryRunOnly.checked = settings.dryRunOnly;
     }
 
-    async function saveSettings() {
+    async function saveSettings(event) {
+      event?.preventDefault();
       const payload = {
         symbols: splitList(symbols.value),
         timeframes: splitList(timeframes.value),
@@ -690,17 +691,22 @@ internal static class DashboardPage
         paperTradingTakeProfit1ExitPercent: Number(paperTradingTakeProfit1ExitPercent.value)
       };
       saveStatus.textContent = "Salvataggio...";
-      const response = await fetch("/api/settings/bot", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-      if (!response.ok) {
-        saveStatus.textContent = "Errore salvataggio.";
-        return;
+      try {
+        const response = await fetch("/api/settings/bot", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        if (!response.ok) {
+          const errorText = await response.text();
+          saveStatus.textContent = `Errore salvataggio: ${response.status} ${errorText || response.statusText}`;
+          return;
+        }
+        saveStatus.textContent = "Impostazioni salvate in appsettings.json. Riavvia lo scheduler per applicarle.";
+        await loadStatus();
+      } catch (error) {
+        saveStatus.textContent = `Errore salvataggio: ${error?.message || "richiesta fallita"}`;
       }
-      saveStatus.textContent = "Impostazioni salvate in appsettings.json.";
-      await loadStatus();
     }
 
     async function runCommand(commandName) {
