@@ -127,7 +127,7 @@ public class Worker : BackgroundService
     private async Task AnalyzeWatchlistAsync(bool sendIndividualAlerts, CancellationToken cancellationToken)
     {
         var symbols = DistinctOrDefault(_botSettings.Value.Symbols, ["BTCUSDT"]);
-        var timeframes = DistinctOrDefault(_botSettings.Value.Timeframes, ["1h"]);
+        var timeframes = ResolveConfiguredTimeframes("BOT_TIMEFRAMES", _botSettings.Value.Timeframes, ["1h"]);
 
         _logger.LogInformation("Analyze watchlist started: {SymbolCount} symbols, {TimeframeCount} timeframes.", symbols.Length, timeframes.Length);
 
@@ -165,9 +165,7 @@ public class Worker : BackgroundService
     private async Task ReportWatchlistAsync(CancellationToken cancellationToken)
     {
         var symbols = DistinctOrDefault(_botSettings.Value.Symbols, ["BTCUSDT"]);
-        var timeframes = _botSettings.Value.ReportTimeframes.Length > 0
-            ? DistinctOrDefault(_botSettings.Value.ReportTimeframes, ["1h", "4h", "1d"])
-            : ["1h", "4h", "1d"];
+        var timeframes = ResolveConfiguredTimeframes("BOT_REPORT_TIMEFRAMES", _botSettings.Value.ReportTimeframes, ["1h", "4h", "1d"]);
         var signals = new List<Signal>();
         var forceReport = _args.Contains("--force-report", StringComparer.OrdinalIgnoreCase);
         var sendEmptyReport = _args.Contains("--send-empty-report", StringComparer.OrdinalIgnoreCase);
@@ -381,7 +379,7 @@ public class Worker : BackgroundService
     private async Task BacktestReportAsync(CancellationToken cancellationToken)
     {
         var symbols = DistinctOrDefault(_botSettings.Value.Symbols, ["BTCUSDT"]);
-        var timeframes = DistinctOrDefault(_botSettings.Value.Timeframes, ["1h"]);
+        var timeframes = ResolveConfiguredTimeframes("BOT_TIMEFRAMES", _botSettings.Value.Timeframes, ["1h"]);
         var options = new BacktestOptions(
             symbols,
             timeframes,
@@ -470,5 +468,18 @@ public class Worker : BackgroundService
             .ToArray();
 
         return distinct.Length > 0 ? distinct : fallback;
+    }
+
+    private static string[] ResolveConfiguredTimeframes(string environmentName, string[] configuredValues, string[] fallback)
+    {
+        var environmentValue = Environment.GetEnvironmentVariable(environmentName);
+        if (!string.IsNullOrWhiteSpace(environmentValue))
+        {
+            var values = environmentValue
+                .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+            return DistinctOrDefault(values, fallback);
+        }
+
+        return DistinctOrDefault(configuredValues, fallback);
     }
 }
